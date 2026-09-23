@@ -226,7 +226,7 @@ footer a { color: var(--ink-2); }
         </div>
         <div class="row"><label>Fly thinks</label>
           <span class="seg" role="group" aria-label="Search depth" id="depth">
-            <button data-sims="16" aria-pressed="false" title="Plays at roughly 1300 Elo">Fast <small>about 1300</small></button>
+            <button data-sims="16" aria-pressed="false" title="Plays at roughly 1150 Elo">Fast <small>about 1150</small></button>
             <button data-sims="128" aria-pressed="true" title="Plays at roughly 1450 Elo">Deep <small>about 1450</small></button>
           </span>
           <span class="hint">Elo, measured against Stockfish</span>
@@ -267,7 +267,7 @@ footer a { color: var(--ink-2); }
       <p><b>What was trained</b> is only how loud each synapse is: one gain per connection, a resting level and a time constant per neuron, and the linear maps in and out. No connection was added or removed, and no sign was flipped. Everything nonlinear the network does, it does inside the connectome.</p>
       <p><b>It taught itself.</b> AlphaZero-style: play games against yourself with a small tree search, learn to predict what the search preferred and who won, repeat. Stockfish only ever measured; it never taught. After 322,000 games the fly held its own against Stockfish at its lowest calibrated strength, and without any search at all it loses about 74 centipawns a move, roughly a 1200-rated human.</p>
       <p><b>Is the fly's wiring special?</b> Probably not for chess. A control with the same neurons and the same number of synapses but random partners learns at least as fast. What seems to matter is the scale and sparsity of the substrate, not who evolution wired to whom. Which is, in its own way, the more interesting finding.</p>
-      <p><b>In your browser</b> the whole network is downloaded once and evaluated on your graphics card through WebGPU, or across your CPU cores where that is not available. "Fast" plays at roughly 1300 Elo and "Deep" at roughly 1450, measured in fixed-seed matches against Stockfish at its calibrated levels. Code, training logs and the trained weights are on <a href="https://github.com/turlockmike/alpha-fly">GitHub</a>.</p>
+      <p><b>In your browser</b> the whole network is downloaded once and evaluated on your graphics card through WebGPU, or across your CPU cores where that is not available. "Fast" plays at roughly 1150 Elo and "Deep" at roughly 1450, measured in fixed-seed matches against Stockfish at its calibrated levels. Code, training logs and the trained weights are on <a href="https://github.com/turlockmike/alpha-fly">GitHub</a>.</p>
     </div>
   </section>
 
