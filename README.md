@@ -73,7 +73,8 @@ Some of these cost a day each. They are all written into the code as comments ne
 * **Openings need variety.** With a peaked policy, 1.d4 was answered by ...d5 in 43 of 44 games. Starting each
   game with a few random plies (KataGo's trick) was worth about 30 Elo.
 * **Search is worth a lot to this network.** The same weights score 34%, 52% and 62% against Stockfish skill 0
-  at 32, 128 and 400 simulations per move. The site's "Deepest" setting is a genuinely different opponent.
+  at 32, 128 and 400 simulations per move. The site's "Deep" setting (128) is a genuinely different opponent from
+  the rated one.
 * **Is the fly's wiring special?** Probably not for chess. A control with the same neurons, degrees and signs
   but random partners learned at least as fast over its first 39,000 games (it was run to 12% of the fly's
   budget; the log is in `results/`). What seems to matter is the scale and sparsity of the substrate, not who
@@ -85,8 +86,8 @@ AlphaZero and why) is in [TRAINING.md](TRAINING.md).
 ## Play it locally, train it yourself
 
 The site in `docs/` is static: the trained network (101 MB) is downloaded once and evaluated in your browser, on
-your graphics card through WebGPU where available, otherwise on the CPU (a 32-simulation move takes a few
-seconds). To serve it locally: `python -m http.server -d docs 8090`.
+your graphics card through WebGPU where available, otherwise split across your CPU cores (a 128-simulation move
+takes a few seconds on a laptop). To serve it locally: `python -m http.server -d docs 8090`.
 
 Training needs Python 3.12, [uv](https://docs.astral.sh/uv/), an NVIDIA GPU and, for the ratings,
 [Stockfish](https://stockfishchess.org/) at `tools/stockfish.exe` (or `$STOCKFISH`).

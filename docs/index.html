@@ -203,16 +203,10 @@ footer a { color: var(--ink-2); }
         </div>
         <div class="row"><label>Fly thinks</label>
           <span class="seg" role="group" aria-label="Search depth" id="depth">
-            <button data-sims="0" title="No search: the network's first instinct">Reflex</button>
-            <button data-sims="16">Quick</button>
-            <button data-sims="32" aria-pressed="true" title="32 simulations: the setting its rating was measured at">Rated</button>
-            <button data-sims="128">Deep</button>
-            <button data-sims="400">Deepest</button>
+            <button data-sims="16" aria-pressed="false" title="16 simulations a move">Fast</button>
+            <button data-sims="128" aria-pressed="true" title="128 simulations a move: stronger than the setting its rating was measured at">Deep</button>
           </span>
           <span class="hint" id="depthhint"></span>
-        </div>
-        <div class="row">
-          <label class="toggle"><input type="checkbox" id="improv" checked> Improvise <span class="hint">(a little randomness, so no two games repeat)</span></label>
         </div>
         <div class="btns">
           <button class="btn primary" id="newgame">New game</button>
@@ -251,7 +245,7 @@ footer a { color: var(--ink-2); }
       <p><b>What was trained</b> is only how loud each synapse is: one gain per connection, a resting level and a time constant per neuron, and the linear maps in and out. No connection was added or removed, and no sign was flipped. Everything nonlinear the network does, it does inside the connectome.</p>
       <p><b>It taught itself.</b> AlphaZero-style: play games against yourself with a small tree search, learn to predict what the search preferred and who won, repeat. Stockfish only ever measured; it never taught. After 322,000 games the fly held its own against Stockfish at its lowest calibrated strength, and without any search at all it loses about 74 centipawns a move, roughly a 1200-rated human.</p>
       <p><b>Is the fly's wiring special?</b> Probably not for chess. A control with the same neurons and the same number of synapses but random partners learns at least as fast. What seems to matter is the scale and sparsity of the substrate, not who evolution wired to whom. Which is, in its own way, the more interesting finding.</p>
-      <p><b>In your browser</b> the whole network is downloaded once and evaluated on your graphics card through WebGPU, or on the CPU where that is not available. "Rated" is the 32-simulation search its Elo was measured at; "Deepest" is far stronger and slower. Code, training logs and the trained weights are on <a href="https://github.com/turlockmike/alpha-fly">GitHub</a>.</p>
+      <p><b>In your browser</b> the whole network is downloaded once and evaluated on your graphics card through WebGPU, or across your CPU cores where that is not available. "Fast" searches 16 positions a move; "Deep" searches 128, four times the budget its rating was measured at, and plays noticeably better. Code, training logs and the trained weights are on <a href="https://github.com/turlockmike/alpha-fly">GitHub</a>.</p>
     </div>
   </section>
 
@@ -268,7 +262,7 @@ footer a { color: var(--ink-2); }
 (() => {
   const $ = id => document.getElementById(id);
   const FILES = "abcdefgh";
-  const state = { game: new Chess(), human: "w", flip: false, sims: 32, sel: null, targets: [], busy: false, req: 0,
+  const state = { game: new Chess(), human: "w", flip: false, sims: 128, sel: null, targets: [], busy: false, req: 0,
                   ready: false, evalMs: 60, backend: null, last: null, gameId: 0, thought: null, promo: null };
 
   // ---- engine worker ----
@@ -285,7 +279,7 @@ footer a { color: var(--ink-2); }
       $("loading").hidden = true;
       $("pill").dataset.state = "ready";
       $("pilltext").innerHTML = m.backend === "gpu" ? `<b>GPU</b> ${escapeHtml(shortGpu(m.gpuName))} · ${m.evalMs} ms per thought`
-                                                     : `<b>CPU</b> · ${m.evalMs} ms per thought`;
+                                                     : `<b>CPU</b> ${m.cores > 1 ? m.cores + " cores" : ""} · ${m.evalMs} ms per thought`;
       depthHint();
       if (turnIsFly()) flyMove(); else setStatus("you", "Your move");
     } else if (m.type === "thought") {
@@ -313,7 +307,7 @@ footer a { color: var(--ink-2); }
   function depthHint() {
     const evals = state.sims === 0 ? 1 : state.sims + 1;
     const ms = evals * state.evalMs;
-    $("depthhint").textContent = !state.ready ? "" : state.sims === 0 ? "its first instinct, no lookahead" :
+    $("depthhint").textContent = !state.ready ? "" :
       `${state.sims} simulations · about ${ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + " s"} a move`;
   }
 
@@ -322,10 +316,10 @@ footer a { color: var(--ink-2); }
   function flyMove() {
     if (!state.ready || state.game.game_over()) return;
     state.busy = true; state.sel = null; state.targets = [];
-    setStatus("fly", state.sims ? `The fly is thinking (${state.sims} simulations)` : "The fly reacts");
+    setStatus("fly", `The fly is thinking (${state.sims} simulations)`);
     render();
     const moves = state.game.history({ verbose: true }).map(m => m.from + m.to + (m.promotion || ""));
-    worker.postMessage({ type: "think", id: ++state.req, moves, sims: state.sims, explore: $("improv").checked });
+    worker.postMessage({ type: "think", id: ++state.req, moves, sims: state.sims, explore: true });
   }
   function afterMove() {
     render();

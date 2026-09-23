@@ -122,17 +122,61 @@ function inputDrive(m, feats) {
   return bt;
 }
 
+/** The first update from h = 0 needs no matrix pass: W h is zero. */
+export function firstStep(alpha, hMax, biasTotal, hOut) {
+  for (let i = 0; i < hOut.length; i++) {
+    let s = biasTotal[i];
+    if (s < 0) s = 0; else if (s > hMax) s = hMax;
+    hOut[i] = alpha[i] * s;
+  }
+}
+
+/** One update of rows i0 .. i0+count-1.  vals/col hold those rows' synapses only, crow is local (count+1 entries). */
+export function stepRows(vals, col, crow, alpha, hMax, biasTotal, hIn, hOut, i0, count) {
+  for (let r = 0; r < count; r++) {
+    const i = i0 + r;
+    let s = biasTotal[i];
+    const end = crow[r + 1];
+    for (let k = crow[r]; k < end; k++) s += vals[k] * hIn[col[k]];
+    if (s < 0) s = 0; else if (s > hMax) s = hMax;
+    hOut[r] = hIn[i] + alpha[i] * (s - hIn[i]);
+  }
+}
+
 function recurCpu(m) {
   const { n, values, crow, col, alpha, hMax, biasTotal } = m;
-  let h = m.hA, h2 = m.hB; h.fill(0);
-  for (let t = 0; t < m.steps; t++) {
-    for (let i = 0; i < n; i++) {
-      let s = biasTotal[i];
-      const end = crow[i + 1];
-      for (let k = crow[i]; k < end; k++) s += values[k] * h[col[k]];
-      if (s < 0) s = 0; else if (s > hMax) s = hMax;
-      h2[i] = h[i] + alpha[i] * (s - h[i]);
-    }
+  let h = m.hA, h2 = m.hB;
+  firstStep(alpha, hMax, biasTotal, h);
+  for (let t = 1; t < m.steps; t++) {
+    stepRows(values, col, crow, alpha, hMax, biasTotal, h, h2, 0, n);
+    const tmp = h; h = h2; h2 = tmp;
+  }
+  const out = new Float32Array(m.nOut);
+  for (let j = 0; j < m.nOut; j++) out[j] = h[m.outIdx[j]];
+  return out;
+}
+
+/** Split the rows into `k` slices of roughly equal synapse count: [[i0, count], ...]. */
+export function rowSlices(crow, k) {
+  const n = crow.length - 1, total = crow[n], out = [];
+  let i0 = 0;
+  for (let s = 1; s <= k; s++) {
+    const target = total * s / k;
+    let i1 = s === k ? n : i0;
+    while (i1 < n && crow[i1] < target) i1++;
+    out.push([i0, i1 - i0]); i0 = i1;
+  }
+  return out;
+}
+
+/** The recurrence with the matrix passes done by `pool` (worker.js): returns the output neurons' activity. */
+export async function recurPool(m, pool) {
+  const { alpha, hMax, biasTotal } = m;
+  let h = m.hA, h2 = m.hB;
+  firstStep(alpha, hMax, biasTotal, h);
+  await pool.begin(biasTotal);
+  for (let t = 1; t < m.steps; t++) {
+    await pool.step(h, h2);
     const tmp = h; h = h2; h2 = tmp;
   }
   const out = new Float32Array(m.nOut);
@@ -268,6 +312,11 @@ export async function initGpu(m) {
 export async function evaluateGpu(m, gpu, feats, idx) {
   const bt = inputDrive(m, feats);
   return readout(m, await gpu.recur(bt), idx);
+}
+
+export async function evaluatePool(m, pool, feats, idx) {
+  inputDrive(m, feats);
+  return readout(m, await recurPool(m, pool), idx);
 }
 
 // ---- Gumbel AlphaZero search (chessfly/mcts.py) ----------------------------------------------------------------
