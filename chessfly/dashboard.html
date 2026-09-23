@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>chess-fly training</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --delta-good: #006300; --delta-bad: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --delta-good: #0ca30c; --delta-bad: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --delta-good: #0ca30c; --delta-bad: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1320px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 14px; }
+h1 { font-size: 20px; font-weight: 650; margin: 0; }
+.status { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.status i { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.status[data-state="running"] i { background: var(--good); }
+.status[data-state="paused"] i, .status[data-state="pausing"] i { background: var(--warning); }
+.status[data-state="stalled"] i { background: var(--critical); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 16px; color: var(--ink-2); }
+select, button { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+button { cursor: pointer; }
+.spacer { flex: 1; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.tile .label { color: var(--ink-2); font-size: 13px; }
+.tile .value { font-size: 26px; font-weight: 650; margin-top: 2px; }
+.tile.hero .value { font-size: 52px; line-height: 1.1; }
+.tile .note { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.tile .delta.good { color: var(--delta-good); } .tile .delta.bad { color: var(--delta-bad); }
+.tile.hero { grid-column: span 2; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
+@media (max-width: 480px) { .charts { grid-template-columns: 1fr; } .tile.hero { grid-column: span 1; } }
+.chart h2 { font-size: 15px; font-weight: 650; margin: 0; }
+.chart .sub { color: var(--ink-2); font-size: 12.5px; margin: 1px 0 6px; min-height: 18px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink-2); margin-bottom: 2px; min-height: 19px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.key { width: 14px; height: 0; border-top: 2px solid; border-radius: 2px; display: inline-block; }
+.key.ref { border-top: 1px solid var(--axis); }
+svg { display: block; width: 100%; overflow: visible; outline: none; }
+svg:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; border-radius: 4px; }
+svg text { fill: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+svg text.end { fill: var(--ink-2); }
+.empty { color: var(--muted); padding: 60px 0; text-align: center; }
+#tip { position: fixed; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; font-size: 12.5px; box-shadow: 0 6px 24px rgba(0,0,0,.14); display: none; z-index: 10; min-width: 150px; }
+#tip .x { color: var(--ink-2); margin-bottom: 4px; }
+#tip .row { display: flex; align-items: center; gap: 7px; }
+#tip .row b { font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }
+#tip .row em { font-style: normal; color: var(--ink-2); }
+.games { margin-top: 12px; }
+.games h2 { font-size: 15px; font-weight: 650; margin: 0; }
+.games .sub { color: var(--ink-2); font-size: 12.5px; margin: 1px 0 10px; }
+.gamegrid { display: grid; grid-template-columns: minmax(220px, 300px) minmax(280px, 440px) minmax(200px, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .gamegrid { grid-template-columns: 1fr; } }
+.gamelist { display: flex; flex-direction: column; gap: 4px; max-height: 470px; overflow-y: auto; }
+.gamelist button { text-align: left; border-radius: 8px; padding: 7px 10px; line-height: 1.3; }
+.gamelist button[aria-current="true"] { border-color: var(--series-1); box-shadow: inset 3px 0 0 var(--series-1); }
+.gamelist .g1 { font-weight: 600; } .gamelist .g2 { color: var(--ink-2); font-size: 12.5px; }
+.board { display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); user-select: none; outline: none; }
+.board:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.sq { position: relative; }
+.sq.l { background: #f0d9b5; } .sq.d { background: #b58863; }
+.sq.l.hl { background: #cdd26a; } .sq.d.hl { background: #aaa23a; }
+.sq img { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.sq small { position: absolute; font: 600 10px system-ui, sans-serif; left: 3px; top: 2px; z-index: 1; }
+.sq small.f { left: auto; top: auto; right: 3px; bottom: 1px; }
+.sq.l small { color: #b58863; } .sq.d small { color: #f0d9b5; }
+.players { display: flex; justify-content: space-between; color: var(--ink-2); font-size: 13px; padding: 4px 2px; }
+.players b { color: var(--ink); font-weight: 600; }
+.controls { display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+.controls button { min-width: 38px; } .controls .ply { color: var(--ink-2); margin-left: auto; font-variant-numeric: tabular-nums; }
+.movelist { max-height: 470px; overflow-y: auto; font-size: 13.5px; line-height: 1.9; font-variant-numeric: tabular-nums; }
+.movelist .pair { display: inline-block; white-space: nowrap; margin-right: 6px; }
+.movelist .n { color: var(--muted); margin-right: 3px; } .movelist span.m { padding: 2px 5px; border-radius: 5px; cursor: pointer; margin-right: 1px; }
+.movelist span.m:hover { background: var(--grid); } .movelist span.m.cur { background: var(--series-1); color: #fff; }
+.outcome { color: var(--ink-2); font-size: 13px; margin-top: 8px; }
+details { margin-top: 16px; }
+summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { text-align: right; padding: 4px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { color: var(--ink-2); font-weight: 600; } th:first-child, td:first-child { text-align: left; }
+footer { color: var(--muted); font-size: 12.5px; margin-top: 18px; }
+.stale { opacity: .55; transition: opacity .2s; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>chess-fly training</h1>
+    <span class="status" id="status" data-state="idle"><i></i><span id="statusText">loading</span></span>
+    <span class="spacer"></span>
+    <a href="/play" style="color:var(--series-1)">Play against it &rarr;</a>
+    <span id="updated" style="color:var(--muted)"></span>
+  </header>
+  <div class="filters">
+    <label>Run <select id="run"></select></label>
+    <label>Horizontal axis <select id="xaxis">
+      <option value="iter">Iteration</option><option value="games_total">Self-play games</option><option value="hours">Training hours</option>
+    </select></label>
+    <label>Smoothing <select id="smooth">
+      <option value="1">None</option><option value="5" selected>5 iterations</option><option value="20">20 iterations</option><option value="100">100 iterations</option>
+    </select></label>
+    <span class="spacer"></span>
+    <button id="theme" type="button">Light / dark</button>
+  </div>
+  <section class="tiles" id="tiles"></section>
+  <section class="charts" id="charts"></section>
+  <section class="card games" id="gamesCard">
+    <div style="display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline">
+      <h2>Recent games</h2>
+      <label style="color:var(--ink-2)">Show <select id="gameKind"><option value="selfplay">Self-play (1% sample)</option><option value="eval">Evaluation matches against the ladder</option></select></label>
+    </div>
+    <div class="sub">The ten most recent. Click a move, or focus the board and use the arrow keys (Home / End jump to the ends).</div>
+    <div class="gamegrid">
+      <div class="gamelist" id="gameList"></div>
+      <div>
+        <div class="players" id="topPlayer"></div>
+        <div class="board" id="board" tabindex="0" role="img" aria-label="Chess board"></div>
+        <div class="players" id="bottomPlayer"></div>
+        <div class="controls">
+          <button type="button" id="gFirst" title="Start">&#9198;</button><button type="button" id="gPrev" title="Back">&#9664;</button>
+          <button type="button" id="gPlay" title="Play">&#9654;</button>
+          <button type="button" id="gNext" title="Forward">&#9654;&#9654;</button><button type="button" id="gLast" title="End">&#9197;</button>
+          <button type="button" id="gFlip" title="Flip board">Flip</button><span class="ply" id="gPly"></span>
+        </div>
+        <div class="outcome" id="gOutcome"></div>
+      </div>
+      <div class="movelist" id="moveList"></div>
+    </div>
+  </section>
+  <details id="matchesBox"><summary>Evaluation matches</summary><div class="scroll card"><table id="matches"></table></div></details>
+  <details><summary>Data table (last 200 iterations)</summary><div class="scroll card"><table id="table"></table></div></details>
+  <footer>Small ticks on the top edge of a chart mark where training was resumed. Elo is anchored at Stockfish 17.1 UCI_Elo 1320 = 1320 (eval/ladder.json);
+    centipawn loss is measured on eval/suite.json. Stockfish is a yardstick only and never reaches the training data.
+    The human lines on the centipawn-loss chart use the rule of thumb Elo = 3100 &middot; e<sup>&minus;ACPL/100</sup> for whole human games (1200 &asymp; 95, 1600 &asymp; 66,
+    2000 &asymp; 44, 2400 &asymp; 26); the fly is measured on 1,000 sharp positions, where losses run higher, so read them as loose orientation.</footer>
+</main>
+<div id="tip"></div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const SVG = "http://www.w3.org/2000/svg";
+const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(SVG, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const h = (tag, text, cls, parent) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; if (parent) parent.appendChild(e); return e; };
+
+const fmtInt = v => Math.round(v).toLocaleString("en-US");
+const compact = v => v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 1 : 2) + "M" : v >= 1e4 ? (v / 1e3).toFixed(1) + "K" : fmtInt(v);
+const fmt = { int: fmtInt, f1: v => v.toFixed(1), f3: v => v.toFixed(3), pct: v => (100 * v).toFixed(1) + "%" };
+const XAXES = { iter: { label: "Iteration", fmt: fmtInt }, games_total: { label: "Self-play games", fmt: compact }, hours: { label: "Training hours", fmt: v => v.toFixed(v < 10 ? 2 : 1) } };
+const SPARSE = new Set(["elo", "acpl_search", "top1_search"]);      // measured every eval_every iterations: never smoothed
+
+const CHARTS = [
+  { id: "elo", title: "Elo", sub: "Rolling estimate from the most recent evaluation games against the ladder; the band is ±1 standard error", fmt: "int", band: "elo_se", refs: "ladder",
+    series: [{ key: "elo", label: "Elo" }] },
+  { id: "acpl", title: "Average centipawn loss", sub: "1,000 fixed positions scored by Stockfish; lower is better. Human lines: rule of thumb, whole games - orientation only", fmt: "f1", refs: "baselines", zero: true,
+    series: [{ key: "acpl_policy", label: "Network alone" }, { key: "acpl_search", label: "Network + search" }] },
+  { id: "top1", title: "Agreement with Stockfish's best move", sub: "Same 1,000 positions", fmt: "pct", zero: true,
+    series: [{ key: "top1_policy", label: "Network alone" }, { key: "top1_search", label: "Network + search" }] },
+  { id: "ploss", title: "Policy loss", sub: "Cross-entropy against the search's visit counts", fmt: "f3",
+    series: [{ key: "policy_loss", label: "Training" }, { key: "val_policy_loss", label: "Held out" }] },
+  { id: "vloss", title: "Value loss", sub: "Cross-entropy on game results; held-out positions come from the newest games", fmt: "f3",
+    series: [{ key: "value_ce", label: "Training", fallback: "value_loss" }, { key: "val_value_loss", label: "Held out" }] },
+  { id: "vcorr", title: "Value head against Stockfish's evaluation", sub: "Correlation over the 1,000 positions", fmt: "f3",
+    series: [{ key: "value_corr", label: "Correlation" }] },
+  { id: "ends", title: "How self-play games end", sub: "Share of the games finished in each iteration", fmt: "pct", zero: true,
+    series: [{ key: "mate_share", label: "Checkmate" }, { key: "adj_share", label: "Adjudicated on material" }, { key: "draw_share", label: "Draw" }] },
+  { id: "plies", title: "Average game length", sub: "Plies per self-play game", fmt: "f1", series: [{ key: "avg_plies", label: "Plies" }] },
+  { id: "speed", title: "Self-play speed", sub: "Positions per second", fmt: "int", zero: true, series: [{ key: "selfplay_positions_per_s", label: "Positions per second" }] },
+];
+
+const state = { run: null, offset: 0, rows: [], events: [], meta: { ladder: {}, baselines: {} }, pausedFile: false, hover: {} };
+
+function ingest(records) {
+  for (const r of records) {
+    if (r.type === "event") { state.events.push(r); continue; }
+    if (r.type !== "iter") continue;
+    const g = Math.max(r.games || 0, 1);
+    r.hours = (r.elapsed_s || 0) / 3600;
+    if (r.value_ce == null && r.value_loss != null) r.value_ce = r.value_loss;      // older rows logged only the blended loss
+    r.mate_share = ((r.white_wins || 0) + (r.black_wins || 0) - (r.adjudicated || 0)) / g;
+    r.adj_share = (r.adjudicated || 0) / g;
+    r.draw_share = (r.draws || 0) / g;
+    state.rows.push(r);
+  }
+}
+
+function niceTicks(lo, hi, n = 5) {
+  if (!(hi > lo)) { hi = lo + 1; lo = lo - 1; }
+  const raw = (hi - lo) / n, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+  const step = (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
+  const t = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) t.push(Math.abs(v) < step * 1e-9 ? 0 : v);
+  return t;
+}
+const tickFmt = (v, step) => { if (Math.abs(v) >= 10000) return compact(v); const d = Math.max(0, Math.min(4, -Math.floor(Math.log10(step) + 1e-9))); return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); };
+
+function seriesPoints(key, xKey, window_) {
+  const pts = [];
+  for (const r of state.rows) if (r[key] != null && r[xKey] != null) pts.push({ x: r[xKey], y: r[key], r });
+  if (window_ > 1 && !SPARSE.has(key)) {
+    let sum = 0;
+    const raw = pts.map(p => p.y);
+    for (let i = 0; i < pts.length; i++) { sum += raw[i]; if (i >= window_) sum -= raw[i - window_]; pts[i].y = sum / Math.min(i + 1, window_); }
+  }
+  return pts;
+}
+const thin = (pts, max = 1200) => { if (pts.length <= max) return pts; const s = pts.length / max, out = []; for (let i = 0; i < max; i++) out.push(pts[Math.floor(i * s)]); out.push(pts[pts.length - 1]); return out; };
+
+function drawChart(cfg) {
+  const card = $("c_" + cfg.id), xKey = $("xaxis").value, win = +$("smooth").value, F = fmt[cfg.fmt];
+  const holder = card.querySelector(".plot");
+  holder.replaceChildren();
+  const all = cfg.series.map((s, i) => ({ ...s, slot: i + 1, pts: seriesPoints(s.key, xKey, win) })).filter(s => s.pts.length);
+  if (!all.length) { h("div", "No data yet", "empty", holder); return; }
+
+  const W = Math.max(holder.clientWidth, 300), H = 230, m = { l: 46, r: cfg.refs ? 84 : 58, t: 8, b: 26 };
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const xs = all.flatMap(s => s.pts.map(p => p.x)), ys = all.flatMap(s => s.pts.map(p => p.y));
+  let x0 = Math.min(...xs), x1 = Math.max(...xs); if (x1 === x0) { x1 += 1; x0 = Math.max(0, x0 - 1); }
+  let y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const bandKey = cfg.band;
+  if (bandKey) for (const p of all[0].pts) if (p.r[bandKey] != null) { y0 = Math.min(y0, p.y - p.r[bandKey]); y1 = Math.max(y1, p.y + p.r[bandKey]); }
+  const refs = Object.entries(cfg.refs ? state.meta[cfg.refs] || {} : {}).map(([k, v]) => ({ label: REF_LABELS[k] || k, v }));
+  if (cfg.refs === "baselines") for (const elo of HUMAN_ELO) refs.push({ label: "human " + elo, v: -100 * Math.log(elo / 3100) });
+  if (cfg.zero) y0 = Math.min(y0, 0);
+  if (cfg.refs === "baselines") for (const r of refs) y1 = Math.max(y1, r.v);
+  const pad = (y1 - y0 || 1) * 0.08; y1 += pad; if (!cfg.zero || y0 < 0) y0 -= pad;
+  const yt = niceTicks(y0, y1); y0 = Math.min(y0, yt[0]); y1 = Math.max(y1, yt[yt.length - 1]);
+  const ystep = yt.length > 1 ? yt[1] - yt[0] : 1;
+  const X = v => m.l + (v - x0) / (x1 - x0) * pw, Y = v => m.t + (1 - (v - y0) / (y1 - y0)) * ph;
+
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, tabindex: 0, role: "img", "aria-label": cfg.title }, holder);
+  for (const t of yt) { el("line", { x1: m.l, x2: m.l + pw, y1: Y(t), y2: Y(t), stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    el("text", { x: m.l - 8, y: Y(t) + 4, "text-anchor": "end" }, svg).textContent = cfg.fmt === "pct" ? tickFmt(t * 100, ystep * 100) + "%" : tickFmt(t, ystep); }
+  el("line", { x1: m.l, x2: m.l + pw, y1: m.t + ph, y2: m.t + ph, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+  for (const t of niceTicks(x0, x1, Math.max(3, Math.floor(pw / 90)))) if (t >= x0 && t <= x1 && (xKey === "hours" || Number.isInteger(t)))
+    el("text", { x: X(t), y: H - 7, "text-anchor": "middle" }, svg).textContent = XAXES[xKey].fmt(t);
+
+  // reference levels (ladder rungs, baselines): solid hairlines with a muted label in the right margin
+  let lastY = -99;
+  for (const r of refs.sort((a, b) => b.v - a.v)) { if (r.v < y0 || r.v > y1) continue;
+    el("line", { x1: m.l, x2: m.l + pw, y1: Y(r.v), y2: Y(r.v), stroke: "var(--axis)", "stroke-width": 1 }, svg);
+    if (Y(r.v) - lastY >= 12) { el("text", { x: m.l + pw + 6, y: Y(r.v) + 4 }, svg).textContent = r.label; lastY = Y(r.v); } }
+  // resumes: a short tick on the top edge.  Full-height lines read as data once a run had been restarted a dozen times,
+  // and restarts a few iterations apart merged into thick bars - so ticks closer than 4px are drawn once.
+  let lastTick = -99;
+  for (const e of state.events) if (e.event === "resume") { const r = state.rows.find(r => r.iter > e.iter); if (!r || r[xKey] < x0 || r[xKey] > x1) continue;
+    const x = X(r[xKey]); if (x - lastTick < 4) continue; lastTick = x;
+    el("line", { x1: x, x2: x, y1: m.t - 2, y2: m.t + 5, stroke: "var(--muted)", "stroke-width": 1.5, "stroke-linecap": "round" }, svg); }
+
+  if (bandKey) { const b = all[0].pts.filter(p => p.r[bandKey] != null);
+    if (b.length > 1) el("path", { d: "M" + b.map(p => `${X(p.x)},${Y(p.y + p.r[bandKey])}`).join("L") + "L" + b.slice().reverse().map(p => `${X(p.x)},${Y(p.y - p.r[bandKey])}`).join("L") + "Z",
+      fill: "var(--series-1)", opacity: .1 }, svg); }
+  const ends = [];
+  for (const s of all) { const pts = thin(s.pts), c = `var(--series-${s.slot})`;
+    if (pts.length > 1) el("path", { d: "M" + pts.map(p => `${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join("L"), fill: "none", stroke: c, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+    if (pts.length <= 40) for (const p of pts) el("circle", { cx: X(p.x), cy: Y(p.y), r: 4, fill: c, stroke: "var(--surface)", "stroke-width": 2 }, svg);
+    const last = s.pts[s.pts.length - 1]; ends.push({ y: Y(last.y), text: F(last.y), x: X(last.x) }); }
+  ends.sort((a, b) => a.y - b.y);
+  if (!refs.length && ends.every((e, i) => i === 0 || e.y - ends[i - 1].y >= 13))       // end labels only when they do not collide
+    for (const e of ends) el("text", { x: Math.min(e.x + 7, W - 2), y: e.y + 4, class: "end" }, svg).textContent = e.text;
+
+  // hover layer: the crosshair finds the x, one tooltip lists every series
+  const xsSorted = [...new Set(xs)].sort((a, b) => a - b);
+  const cross = el("line", { y1: m.t, y2: m.t + ph, stroke: "var(--ink-2)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const dots = all.map(s => el("circle", { r: 4.5, fill: `var(--series-${s.slot})`, stroke: "var(--surface)", "stroke-width": 2, visibility: "hidden" }, svg));
+  const hit = el("rect", { x: m.l, y: m.t, width: pw, height: ph, fill: "transparent" }, svg);
+  const nearest = (arr, v, get) => { let lo = 0, hi = arr.length - 1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; (get(arr[mid]) < v ? lo = mid : hi = mid); } return Math.abs(get(arr[lo]) - v) <= Math.abs(get(arr[hi]) - v) ? lo : hi; };
+  let idx = xsSorted.length - 1;
+  const show = (i, cx, cy) => { idx = Math.max(0, Math.min(xsSorted.length - 1, i)); const xv = xsSorted[idx];
+    cross.setAttribute("x1", X(xv)); cross.setAttribute("x2", X(xv)); cross.setAttribute("visibility", "visible");
+    const tip = $("tip"); tip.replaceChildren(); h("div", `${XAXES[xKey].label} ${XAXES[xKey].fmt(xv)}`, "x", tip);
+    all.forEach((s, k) => { const p = s.pts[nearest(s.pts, xv, p => p.x)]; const near = Math.abs(X(p.x) - X(xv)) < 24;
+      dots[k].setAttribute("visibility", near ? "visible" : "hidden"); if (!near) return;
+      dots[k].setAttribute("cx", X(p.x)); dots[k].setAttribute("cy", Y(p.y));
+      const row = h("div", null, "row", tip); const key = h("span", null, "key", row); key.style.borderTopColor = `var(--series-${s.slot})`;
+      h("b", F(p.y) + (bandKey && p.r[bandKey] != null ? ` ± ${fmtInt(p.r[bandKey])}` : ""), null, row); h("em", s.label, null, row); });
+    tip.style.display = "block"; const box = svg.getBoundingClientRect();
+    const px = cx ?? box.left + X(xv) / W * box.width, py = cy ?? box.top + 40;
+    tip.style.left = Math.min(px + 14, innerWidth - tip.offsetWidth - 8) + "px"; tip.style.top = Math.max(8, py - tip.offsetHeight - 10) + "px"; };
+  const hide = () => { cross.setAttribute("visibility", "hidden"); dots.forEach(d => d.setAttribute("visibility", "hidden")); $("tip").style.display = "none"; };
+  hit.addEventListener("pointermove", e => { const box = svg.getBoundingClientRect(); const xv = x0 + ((e.clientX - box.left) / box.width * W - m.l) / pw * (x1 - x0);
+    show(nearest(xsSorted, xv, v => v), e.clientX, e.clientY); });
+  hit.addEventListener("pointerleave", hide);
+  svg.addEventListener("keydown", e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); show(idx + (e.key === "ArrowLeft" ? -1 : 1)); } if (e.key === "Escape") hide(); });
+  svg.addEventListener("focus", () => show(idx)); svg.addEventListener("blur", hide);
+}
+// Human average centipawn loss by rating, from the rule of thumb  Elo = 3100 * exp(-ACPL / 100)  quoted on the lichess forums
+// (no dataset given; the one data-based study found ACPL explains only 5-7% of rating variance).  It averages whole human
+// games, quiet moves included; the fly's number is measured on 1,000 sharp positions.  Loose orientation, not a conversion.
+const HUMAN_ELO = [1200, 1600, 2000, 2400];
+const REF_LABELS = { random: "random", greedy: "greedy", sf_mix10: "SF 10%", sf_mix25: "SF 25%", sf_mix50: "SF 50%", sf_mix75: "SF 75%", sf_mix90: "SF 90%",
+  sf_skill0: "SF skill 0", sf_skill0_10k: "SF skill 0, 10k", sf_1320: "SF 1320", sf_1600: "SF 1600" };
+
+function buildCharts() {
+  const root = $("charts"); root.replaceChildren();
+  for (const cfg of CHARTS) { const card = h("section", null, "card chart", root); card.id = "c_" + cfg.id;
+    h("h2", cfg.title, null, card); h("div", cfg.sub || "", "sub", card);
+    const lg = h("div", null, "legend", card);
+    if (cfg.series.length > 1) cfg.series.forEach((s, i) => { const item = h("span", null, null, lg); const k = h("span", null, "key", item); k.style.borderTopColor = `var(--series-${i + 1})`; h("span", s.label, null, item); });
+    if (cfg.refs) { const item = h("span", null, null, lg); h("span", null, "key ref", item); h("span", cfg.refs === "ladder" ? "Ladder opponents" : "References: random mover 194, greedy mover 123; humans by rating (approximate)", null, item); }
+    h("div", null, "plot", card); }
+}
+
+function lastWith(key, skip = 0) { let n = 0; for (let i = state.rows.length - 1; i >= 0; i--) if (state.rows[i][key] != null && n++ === skip) return state.rows[i]; return null; }
+function tile(label, value, note, opts = {}) {
+  const t = h("div", null, "card tile" + (opts.hero ? " hero" : ""), $("tiles")); h("div", label, "label", t); h("div", value, "value", t);
+  const n = h("div", null, "note", t);
+  h("span", note || "", null, n);
+  if (opts.delta != null && opts.delta !== 0) { const good = opts.upGood ? opts.delta > 0 : opts.delta < 0;
+    h("span", " · ", null, n); h("span", (opts.delta > 0 ? "▲ " : "▼ ") + opts.deltaText, "delta " + (good ? "good" : "bad"), n); h("span", " since the previous measurement", null, n); }
+}
+function drawTiles() {
+  $("tiles").replaceChildren();
+  const last = state.rows[state.rows.length - 1];
+  const e = lastWith("elo"), ePrev = lastWith("elo", 1);
+  tile("Elo", e ? fmtInt(e.elo) : "–", e ? `± ${e.elo_se} · measured at iteration ${fmtInt(e.iter)}` : "first match after eval_every iterations",
+    { hero: true, delta: e && ePrev ? e.elo - ePrev.elo : null, deltaText: e && ePrev ? fmtInt(Math.abs(e.elo - ePrev.elo)) : "", upGood: true });
+  const a = lastWith("acpl_search"), aPrev = lastWith("acpl_search", 1);
+  tile("Centipawn loss, with search", a ? a.acpl_search.toFixed(1) : "–", "random mover 194 · greedy 123",
+    { delta: a && aPrev ? a.acpl_search - aPrev.acpl_search : null, deltaText: a && aPrev ? Math.abs(a.acpl_search - aPrev.acpl_search).toFixed(1) : "", upGood: false });
+  const p = lastWith("acpl_policy");
+  tile("Centipawn loss, network alone", p ? p.acpl_policy.toFixed(1) : "–", p ? `best move found ${(100 * p.top1_policy).toFixed(1)}% of the time` : "");
+  tile("Self-play games", last ? compact(last.games_total) : "–", last ? `${compact(last.positions_total)} positions · iteration ${fmtInt(last.iter)}` : "");
+  tile("Self-play speed", last ? fmtInt(last.selfplay_positions_per_s) : "–", "positions per second");
+  tile("Training time", last ? (last.hours < 1 ? Math.round(last.hours * 60) + " min" : last.hours.toFixed(1) + " h") : "–", last ? `${compact(last.train_steps_total)} gradient steps` : "");
+}
+
+function drawStatus() {
+  const lastRow = state.rows[state.rows.length - 1], lastEvent = state.events[state.events.length - 1];
+  const records = [lastRow, lastEvent].filter(Boolean).sort((a, b) => a.time < b.time ? -1 : 1), last = records[records.length - 1];
+  let s = "idle", text = "no data";
+  if (last) { const age = (Date.now() - new Date(last.time).getTime()) / 60000;
+    if (last.type === "event" && last.event === "pause") [s, text] = ["paused", "Paused at iteration " + fmtInt(last.iter)];
+    else if (last.type === "event" && last.event === "finish") [s, text] = ["idle", "Finished at iteration " + fmtInt(last.iter)];
+    else if (state.pausedFile) [s, text] = ["pausing", "Pause requested: finishing the current step"];
+    else if (age > 20) [s, text] = ["stalled", `No log line for ${Math.round(age)} minutes`];
+    else [s, text] = ["running", "Running" + (lastRow ? " · iteration " + fmtInt(lastRow.iter) : "")]; }
+  $("status").dataset.state = s; $("statusText").textContent = text;
+  $("updated").textContent = "checked " + new Date().toLocaleTimeString();
+}
+
+function drawTables() {
+  const cols = [["iter", "Iteration", fmtInt], ["games_total", "Games", fmtInt], ["hours", "Hours", v => v.toFixed(2)], ["elo", "Elo", fmtInt], ["elo_se", "±", fmtInt],
+    ["acpl_policy", "CPL net", fmt.f1], ["acpl_search", "CPL search", fmt.f1], ["top1_policy", "Top-1 net", fmt.pct], ["top1_search", "Top-1 search", fmt.pct], ["value_corr", "Value corr.", fmt.f3],
+    ["policy_loss", "Policy loss", fmt.f3], ["val_policy_loss", "held out", fmt.f3], ["value_loss", "Value loss", fmt.f3], ["val_value_loss", "held out", fmt.f3],
+    ["mate_share", "Mates", fmt.pct], ["draw_share", "Draws", fmt.pct], ["avg_plies", "Plies", fmt.f1], ["selfplay_positions_per_s", "Pos/s", fmtInt]];
+  const t = $("table"); t.replaceChildren(); const head = h("tr", null, null, t); cols.forEach(c => h("th", c[1], null, head));
+  for (const r of state.rows.slice(-200).reverse()) { const tr = h("tr", null, null, t); cols.forEach(c => h("td", r[c[0]] == null ? "" : c[2](r[c[0]]), null, tr)); }
+  const mt = $("matches"); mt.replaceChildren(); const mh = h("tr", null, null, mt); ["Iteration", "Opponents and score", "Mates", "Elo"].forEach(c => h("th", c, null, mh));
+  const matches = state.rows.filter(r => Object.keys(r).some(k => k.startsWith("vs_"))).slice(-100).reverse();
+  for (const r of matches) { const tr = h("tr", null, null, mt); h("td", fmtInt(r.iter), null, tr);
+    h("td", Object.keys(r).filter(k => k.startsWith("vs_")).map(k => `${REF_LABELS[k.slice(3)] || k.slice(3)} ${(100 * r[k]).toFixed(0)}%`).join("  ·  "), null, tr);
+    h("td", r.mates ?? "", null, tr); h("td", r.elo != null ? `${fmtInt(r.elo)} ± ${r.elo_se}` : "", null, tr); }
+  $("matchesBox").style.display = matches.length ? "" : "none";
+}
+
+// ---- recent games: the server replays the PGN, this only draws FENs -----------------------------
+const GLYPH = { k: "\u265A", q: "\u265B", r: "\u265C", b: "\u265D", n: "\u265E", p: "\u265F" };      // filled glyphs for both colours
+const gv = { games: [], id: null, ply: 0, flip: false, timer: null };
+const currentGame = () => gv.games.find(g => g.id === gv.id);
+function opponentName(n) { return n === "fly" ? "fly" : (REF_LABELS[n] || n); }
+
+function drawBoard() {
+  const g = currentGame(), board = $("board"); board.replaceChildren();
+  if (!g) { $("topPlayer").textContent = $("bottomPlayer").textContent = $("gPly").textContent = $("gOutcome").textContent = ""; return; }
+  const rows = g.fens[gv.ply].split("/"), grid = [];                                   // grid[rank 8..1][file a..h]
+  for (const r of rows) { const line = []; for (const ch of r) { if (/\d/.test(ch)) for (let i = 0; i < +ch; i++) line.push(null); else line.push(ch); } grid.push(line); }
+  const last = g.moves[gv.ply] || [];
+  for (let vr = 0; vr < 8; vr++) for (let vf = 0; vf < 8; vf++) {
+    const rank = gv.flip ? vr : 7 - vr, file = gv.flip ? 7 - vf : vf, sqIndex = rank * 8 + file, piece = grid[7 - rank][file];
+    const sq = h("div", null, "sq " + ((rank + file) % 2 ? "l" : "d") + (last.includes(sqIndex) ? " hl" : ""), board);
+    if (piece) { const img = document.createElement("img"); img.src = `/pieces/${piece === piece.toUpperCase() ? "w" : "b"}${piece.toLowerCase()}.svg`; img.alt = ""; img.draggable = false; sq.appendChild(img); }
+    if (vf === 0) h("small", String(rank + 1), null, sq);
+    if (vr === 7) h("small", "abcdefgh"[file], "f", sq);
+  }
+  const top = gv.flip ? "white" : "black", bottom = gv.flip ? "black" : "white";
+  const label = (side, el) => { el.replaceChildren(); h("b", opponentName(g[side]), null, el); h("span", side === "white" ? "White" : "Black", null, el); };
+  label(top, $("topPlayer")); label(bottom, $("bottomPlayer"));
+  $("gPly").textContent = `move ${Math.ceil(gv.ply / 2)} of ${Math.ceil(g.sans.length / 2)}`;
+  $("gOutcome").textContent = `${g.result}${g.termination ? " · " + g.termination : ""} · iteration ${g.iter ?? "?"}`;
+  for (const m of $("moveList").querySelectorAll(".m")) m.classList.toggle("cur", +m.dataset.ply === gv.ply);
+  const cur = $("moveList").querySelector(".m.cur"); if (cur) cur.scrollIntoView({ block: "nearest" });
+}
+function goTo(ply) { const g = currentGame(); if (!g) return; gv.ply = Math.max(0, Math.min(g.sans.length, ply)); drawBoard(); }
+function stopPlay() { clearInterval(gv.timer); gv.timer = null; $("gPlay").innerHTML = "&#9654;"; }
+function selectGame(id, keepPly) {
+  stopPlay(); gv.id = id; const g = currentGame(); if (!g) return;
+  if (!keepPly) { gv.ply = 0; gv.flip = g.black === "fly" && g.white !== "fly"; }            // in a match, the fly sits at the bottom
+  const ml = $("moveList"); ml.replaceChildren();
+  let pair;
+  g.sans.forEach((san, i) => { if (i % 2 === 0) { pair = h("span", null, "pair", ml); ml.appendChild(document.createTextNode(" ")); h("span", (i / 2 + 1) + ".", "n", pair); }
+    const m = h("span", san, "m", pair); m.dataset.ply = i + 1; m.onclick = () => { stopPlay(); goTo(i + 1); $("board").focus(); }; });
+  for (const b of $("gameList").children) b.setAttribute("aria-current", b.dataset.id === id);
+  drawBoard();
+}
+async function loadGames() {
+  if (!state.run) return;
+  let games = await (await fetch(`/api/games?run=${encodeURIComponent(state.run)}&kind=${$("gameKind").value}&n=10`)).json();
+  if (!Array.isArray(games)) games = [];
+  if (!games.length && $("gameKind").value === "selfplay" && !gv.triedEval) { gv.triedEval = true; $("gameKind").value = "eval"; return loadGames(); }
+  const same = games.length === gv.games.length && games.every((g, i) => g.id === gv.games[i].id);
+  if (same) return;
+  gv.games = games; const list = $("gameList"); list.replaceChildren();
+  if (!games.length) { h("div", "No games saved yet", "empty", list); gv.id = null; drawBoard(); $("moveList").replaceChildren(); return; }
+  for (const g of games) { const b = h("button", null, null, list); b.type = "button"; b.dataset.id = g.id;
+    h("div", `${opponentName(g.white)} – ${opponentName(g.black)}   ${g.result}`, "g1", b);
+    h("div", `iteration ${g.iter ?? "?"} · ${g.sans.length} plies${g.termination ? " · " + g.termination : ""}`, "g2", b);
+    b.onclick = () => selectGame(g.id); }
+  selectGame(games.some(g => g.id === gv.id) ? gv.id : games[0].id, games.some(g => g.id === gv.id));      // new games arriving do not yank the one being watched
+}
+function initGames() {
+  $("gFirst").onclick = () => { stopPlay(); goTo(0); }; $("gPrev").onclick = () => { stopPlay(); goTo(gv.ply - 1); };
+  $("gNext").onclick = () => { stopPlay(); goTo(gv.ply + 1); }; $("gLast").onclick = () => { stopPlay(); goTo(1e9); };
+  $("gFlip").onclick = () => { gv.flip = !gv.flip; drawBoard(); };
+  for (const id of ["gFirst", "gPrev", "gNext", "gLast"]) $(id).addEventListener("click", () => $("board").focus());
+  $("gPlay").onclick = () => { if (gv.timer) return stopPlay(); const g = currentGame(); if (!g) return; if (gv.ply >= g.sans.length) gv.ply = 0;
+    $("gPlay").innerHTML = "&#10074;&#10074;"; gv.timer = setInterval(() => { if (gv.ply >= currentGame().sans.length) return stopPlay(); goTo(gv.ply + 1); }, 700); };
+  $("board").addEventListener("keydown", e => { const k = { ArrowLeft: gv.ply - 1, ArrowRight: gv.ply + 1, Home: 0, End: 1e9 }[e.key]; if (k !== undefined) { e.preventDefault(); stopPlay(); goTo(k); } });
+  $("gameKind").onchange = () => { gv.triedEval = true; gv.games = []; gv.id = null; loadGames(); };
+}
+
+function render() { drawStatus(); drawTiles(); CHARTS.forEach(drawChart); drawTables(); }
+
+async function poll() {
+  if (!state.run) return;
+  try { const res = await fetch(`/api/log?run=${encodeURIComponent(state.run)}&offset=${state.offset}`); if (!res.ok) return;
+    const d = await res.json(); if (d.offset < state.offset) { state.rows = []; state.events = []; }
+    state.offset = d.offset; state.pausedFile = d.paused_file; ingest(d.rows);
+    if (d.rows.length || !state.drawn) { render(); state.drawn = true; } else drawStatus();
+  } finally { $("charts").classList.remove("stale"); }
+}
+async function selectRun(name) { state.run = name; state.offset = 0; state.rows = []; state.events = []; state.drawn = false; $("charts").classList.add("stale"); await poll(); }
+
+async function init() {
+  buildCharts();
+  state.meta = await (await fetch("/api/meta")).json();
+  const runs = await (await fetch("/api/runs")).json(), sel = $("run");
+  runs.forEach(r => { const o = h("option", r, null, sel); o.value = r; });
+  if (!runs.length) { $("statusText").textContent = "no runs yet: start one with  uv run python -m chessfly.train --run fly"; return; }
+  const wanted = new URLSearchParams(location.search).get("run");
+  sel.value = runs.includes(wanted) ? wanted : runs[0];
+  sel.onchange = async () => { await selectRun(sel.value); gv.games = []; gv.id = null; gv.triedEval = false; $("gameKind").value = "selfplay"; loadGames(); };
+  $("xaxis").onchange = $("smooth").onchange = render;
+  $("theme").onclick = () => { const dark = getComputedStyle(document.documentElement).colorScheme.includes("dark"); document.documentElement.dataset.theme = dark ? "light" : "dark"; };
+  let timer; addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(render, 150); });
+  initGames();
+  await selectRun(sel.value);
+  loadGames();
+  setInterval(poll, 10000);
+  setInterval(loadGames, 30000);
+}
+init();
+</script>
+</body>
+</html>

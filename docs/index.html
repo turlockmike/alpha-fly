@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>alpha-fly</title>
+<meta name="description" content="Play chess against a fruit fly's brain: the complete male Drosophila connectome, taught chess by self-play, running in your browser.">
+<meta property="og:title" content="alpha-fly">
+<meta property="og:description" content="Play chess against a fruit fly's brain. 166,700 neurons, 10.5 million synapses, trained by self-play, running in your browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23b8236e'/%3E%3Ccircle cx='11' cy='13' r='3' fill='%23fff'/%3E%3Ccircle cx='21' cy='13' r='3' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Instrument+Sans:ital,wght@0,400..700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  color-scheme: light;
+  --ground: #f1f3f0; --surface: #fbfcfa; --sunk: #e6eae6; --line: rgba(19, 26, 23, .12);
+  --ink: #131a17; --ink-2: #4b5753; --muted: #7b8783;
+  --accent: #b8236e; --accent-ink: #ffffff; --accent-soft: rgba(184, 35, 110, .12);
+  --teal: #177566; --teal-soft: rgba(23, 117, 102, .14);
+  --light-sq: #e6e1cc; --dark-sq: #849375; --last: rgba(222, 184, 88, .55); --check: rgba(200, 48, 48, .55);
+  --sel: rgba(184, 35, 110, .35); --dot: rgba(19, 26, 23, .28);
+  --good: #2f7d4f; --bad: #b2372f;
+  --shadow: 0 18px 50px rgba(19, 26, 23, .12), 0 2px 6px rgba(19, 26, 23, .06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --ground: #0f1412; --surface: #171e1b; --sunk: #0c100f; --line: rgba(237, 241, 238, .12);
+    --ink: #edf1ee; --ink-2: #b5bfba; --muted: #86928d;
+    --accent: #f06aa6; --accent-ink: #1a0810; --accent-soft: rgba(240, 106, 166, .16);
+    --teal: #3fbfa8; --teal-soft: rgba(63, 191, 168, .16);
+    --light-sq: #c7c1a5; --dark-sq: #5a6a56; --last: rgba(222, 184, 88, .5); --check: rgba(220, 60, 60, .55);
+    --sel: rgba(240, 106, 166, .4); --dot: rgba(15, 20, 18, .35);
+    --good: #5fc283; --bad: #e0685d;
+    --shadow: 0 18px 50px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .3);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--ground); color: var(--ink);
+  font-family: "Instrument Sans", "Helvetica Neue", Arial, sans-serif; font-size: 16px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+a { color: inherit; }
+.display { font-family: "Bricolage Grotesque", "Instrument Sans", Arial, sans-serif; }
+.mono { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+#bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,.9) 0, rgba(0,0,0,.35) 45vh, transparent 90vh);
+      -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.9) 0, rgba(0,0,0,.35) 45vh, transparent 90vh); }
+.wrap { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding-inline: clamp(16px, 4vw, 40px); }
+
+/* header */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 22px 8px; flex-wrap: wrap; }
+.wordmark { font-weight: 700; font-size: 22px; letter-spacing: -.02em; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; }
+.wordmark i { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); display: inline-block; box-shadow: 0 0 0 4px var(--accent-soft); }
+.nav { display: flex; gap: 20px; font-size: 14px; color: var(--ink-2); }
+.nav a { text-decoration: none; }
+.nav a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.pill { font-size: 12px; letter-spacing: .02em; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); display: inline-flex; align-items: center; gap: 7px; }
+.pill b { color: var(--ink); font-weight: 600; }
+.pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.pill[data-state="ready"] i { background: var(--good); }
+.pill[data-state="loading"] i { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.pill[data-state="error"] i { background: var(--bad); }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.7); } }
+
+/* hero */
+.hero { padding-block: 40px 28px; max-width: 760px; }
+.hero h1 { font-size: clamp(38px, 6.2vw, 68px); line-height: 1.02; letter-spacing: -.035em; font-weight: 600; margin: 0 0 16px; text-wrap: balance; font-variation-settings: "opsz" 96; }
+.hero h1 em { font-style: normal; color: var(--accent); }
+.hero p { font-size: clamp(16px, 1.35vw, 18.5px); color: var(--ink-2); margin: 0; max-width: 62ch; text-wrap: pretty; }
+
+/* app */
+.app { display: grid; grid-template-columns: minmax(300px, 640px) minmax(300px, 1fr); gap: clamp(20px, 3vw, 40px); align-items: start; padding-block: 12px 48px; }
+@media (max-width: 860px) { .app { grid-template-columns: 1fr; } }
+.boardwrap { display: grid; gap: 8px; }
+.who { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; color: var(--ink-2); padding-inline: 2px; }
+.who b { color: var(--ink); font-weight: 600; }
+.board { position: relative; width: 100%; aspect-ratio: 1; display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
+         border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+.sq { position: relative; background: var(--light-sq); cursor: default; }
+.sq.d { background: var(--dark-sq); }
+.sq.last::before, .sq.check::before, .sq.sel::before { content: ""; position: absolute; inset: 0; background: var(--last); }
+.sq.check::before { background: var(--check); }
+.sq.sel::before { background: var(--sel); }
+.sq.can { cursor: pointer; }
+.sq.tgt { cursor: pointer; }
+.sq.tgt::after { content: ""; position: absolute; left: 50%; top: 50%; width: 28%; height: 28%; border-radius: 50%; background: var(--dot); transform: translate(-50%, -50%); }
+.sq.tgt.cap::after { width: 86%; height: 86%; background: none; border: 5px solid var(--dot); box-sizing: border-box; }
+.sq img { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.sq .coord { position: absolute; font-size: 10px; font-weight: 600; opacity: .55; }
+.sq .coord.f { right: 3px; bottom: 1px; } .sq .coord.r { left: 3px; top: 1px; }
+.sq.d .coord { color: var(--light-sq); } .sq:not(.d) .coord { color: var(--dark-sq); }
+.status { display: flex; align-items: center; gap: 10px; min-height: 28px; font-size: 15px; color: var(--ink-2); }
+.status i { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.status[data-k="you"] i { background: var(--good); }
+.status[data-k="fly"] i { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+.status[data-k="end"] i { background: var(--ink); }
+.status b { color: var(--ink); font-weight: 600; }
+.promo { position: absolute; inset: 0; background: rgba(0,0,0,.35); display: grid; place-items: center; z-index: 3; }
+.promo div { display: flex; gap: 8px; background: var(--surface); padding: 10px; border-radius: 12px; box-shadow: var(--shadow); }
+.promo button { width: 64px; height: 64px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); cursor: pointer; padding: 6px; }
+.promo button:hover { outline: 2px solid var(--accent); }
+.promo img { width: 100%; height: 100%; }
+
+/* panel */
+.panel { display: grid; gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+.card h2 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; color: var(--muted); margin: 0 0 12px; }
+.loading .bar { height: 8px; border-radius: 999px; background: var(--sunk); overflow: hidden; margin: 10px 0 8px; }
+.loading .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--teal)); transition: width .25s ease; }
+.loading p { margin: 0; font-size: 14px; color: var(--ink-2); }
+.loading .big { font-size: 20px; font-weight: 600; color: var(--ink); letter-spacing: -.01em; }
+.controls { display: grid; gap: 14px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.row label { font-size: 13px; color: var(--ink-2); min-width: 78px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--sunk); }
+.seg button { border: 0; background: transparent; padding: 7px 12px; font: inherit; font-size: 13.5px; color: var(--ink-2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+.seg button:focus-visible, .btn:focus-visible, .promo button:focus-visible, .sq:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hint { font-size: 12.5px; color: var(--muted); }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 10px; cursor: pointer; }
+.btn:hover { background: var(--sunk); }
+.btn.primary { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.btn.primary:hover { opacity: .9; background: var(--ink); }
+.btn:disabled { opacity: .45; cursor: default; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.evalbar { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; margin-bottom: 12px; }
+.evalbar .track { height: 10px; border-radius: 999px; background: var(--sunk); overflow: hidden; border: 1px solid var(--line); position: relative; }
+.evalbar .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 50%; background: var(--ink); transition: width .4s ease; }
+.evalbar .track::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--muted); opacity: .6; }
+.evalbar span { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+table.th { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.th th { text-align: left; font-weight: 500; color: var(--muted); font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; padding: 0 6px 6px 0; }
+table.th td { padding: 5px 6px 5px 0; border-top: 1px solid var(--line); vertical-align: middle; }
+table.th td.n { text-align: right; }
+table.th tr.best td:first-child { font-weight: 700; color: var(--accent); }
+.vbar { display: inline-block; height: 8px; border-radius: 4px; background: var(--teal); vertical-align: middle; min-width: 2px; }
+.empty { font-size: 13.5px; color: var(--muted); margin: 0; }
+.movelist { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 14px; max-height: 150px; overflow-y: auto; line-height: 1.7; }
+.movelist .num { color: var(--muted); }
+.movelist .m { color: var(--ink); }
+.movelist .m.cur { background: var(--accent-soft); border-radius: 4px; padding: 0 4px; }
+.log { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+
+/* how it works */
+.how { padding-block: 32px 40px; border-top: 1px solid var(--line); }
+.how h2.display { font-size: clamp(26px, 3.4vw, 36px); letter-spacing: -.03em; font-weight: 600; margin: 0 0 22px; line-height: 1.1; }
+.figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 30px; }
+.fig { border-left: 2px solid var(--accent); padding-left: 12px; }
+.fig .v { font-size: clamp(24px, 2.6vw, 32px); font-weight: 600; letter-spacing: -.02em; line-height: 1.1; }
+.fig .l { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+.prose { columns: 2; column-gap: 40px; max-width: 1000px; }
+@media (max-width: 760px) { .prose { columns: 1; } }
+.prose p { margin: 0 0 14px; break-inside: avoid; color: var(--ink-2); font-size: 15.5px; max-width: 62ch; }
+.prose p b { color: var(--ink); font-weight: 600; }
+footer { padding-block: 20px 40px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px 24px; }
+footer a { color: var(--ink-2); }
+@media (prefers-reduced-motion: reduce) { .pill i, .status i, .loading .bar i, .evalbar .track i { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<canvas id="bg" aria-hidden="true"></canvas>
+<div class="wrap">
+  <header class="top">
+    <a class="wordmark display" href="./"><i></i>alpha-fly</a>
+    <nav class="nav"><a href="#how">How it works</a><a href="https://github.com/turlockmike/alpha-fly">GitHub</a></nav>
+    <span class="pill" id="pill" data-state="loading"><i></i><span id="pilltext">Loading the brain</span></span>
+  </header>
+
+  <section class="hero">
+    <h1 class="display">A fruit fly's brain <em>would like a game.</em></h1>
+    <p>Every neuron and synapse of the male <i>Drosophila</i> connectome, wired exactly as nature left it, taught chess by playing itself 322,000 times. Nothing in it was designed for chess. It runs right here, in your browser.</p>
+  </section>
+
+  <main class="app">
+    <div class="boardwrap">
+      <div class="who"><span id="topname"><b>the fly</b> · Black</span><span class="mono" id="topclock"></span></div>
+      <div class="board" id="board" aria-label="Chess board"></div>
+      <div class="who"><span id="botname"><b>you</b> · White</span><span class="mono" id="botclock"></span></div>
+      <div class="status" id="status" data-k="load"><i></i><span id="statustext">Downloading the fly's brain</span></div>
+    </div>
+
+    <aside class="panel">
+      <div class="card loading" id="loading">
+        <h2>Downloading a brain</h2>
+        <p class="big display" id="loadbig">0 of 101 MB</p>
+        <div class="bar"><i id="loadbar"></i></div>
+        <p>166,700 neurons and 10.5 million synapses, once. Your browser keeps it for next time.</p>
+      </div>
+
+      <div class="card controls">
+        <h2>Game</h2>
+        <div class="row"><label for="side-w">You play</label>
+          <span class="seg" role="group" aria-label="Your colour">
+            <button id="side-w" data-side="w" aria-pressed="true">White</button>
+            <button id="side-b" data-side="b" aria-pressed="false">Black</button>
+          </span>
+        </div>
+        <div class="row"><label>Fly thinks</label>
+          <span class="seg" role="group" aria-label="Search depth" id="depth">
+            <button data-sims="0" title="No search: the network's first instinct">Reflex</button>
+            <button data-sims="16">Quick</button>
+            <button data-sims="32" aria-pressed="true" title="32 simulations: the setting its rating was measured at">Rated</button>
+            <button data-sims="128">Deep</button>
+            <button data-sims="400">Deepest</button>
+          </span>
+          <span class="hint" id="depthhint"></span>
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="improv" checked> Improvise <span class="hint">(a little randomness, so no two games repeat)</span></label>
+        </div>
+        <div class="btns">
+          <button class="btn primary" id="newgame">New game</button>
+          <button class="btn" id="takeback">Take back</button>
+          <button class="btn" id="flip">Flip board</button>
+          <button class="btn" id="copypgn">Copy PGN</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>What the fly thinks</h2>
+        <div class="evalbar"><div class="track"><i id="evalfill"></i></div><span id="evaltext">even</span></div>
+        <div id="thoughts"><p class="empty">Make a move and the fly will show the lines it considered.</p></div>
+      </div>
+
+      <div class="card">
+        <h2>Moves</h2>
+        <div class="movelist" id="moves"><span class="empty">No moves yet.</span></div>
+      </div>
+      <div class="log" id="log"></div>
+    </aside>
+  </main>
+
+  <section class="how" id="how">
+    <h2 class="display">How a fly ends up playing chess</h2>
+    <div class="figs">
+      <div class="fig"><div class="v display mono">166,700</div><div class="l">neurons, every one in the MaleCNS connectome</div></div>
+      <div class="fig"><div class="v display mono">10.5M</div><div class="l">synaptic connections, signs fixed by their neurotransmitter</div></div>
+      <div class="fig"><div class="v display mono">0</div><div class="l">human games or engine hints in the training data</div></div>
+      <div class="fig"><div class="v display mono">322,016</div><div class="l">games it played against itself</div></div>
+      <div class="fig"><div class="v display mono">23 h</div><div class="l">on one consumer GPU</div></div>
+      <div class="fig"><div class="v display mono">1320</div><div class="l">Elo parity with Stockfish's weakest calibrated level</div></div>
+    </div>
+    <div class="prose">
+      <p><b>The wiring is the fly's.</b> In 2026 the MaleCNS project published the complete wiring diagram of a male fruit fly's central nervous system: which neuron connects to which, how many synapses, and whether each one excites or inhibits. This network is that diagram and nothing else. The board is fed to the fly's 17,937 sensory neurons, activity ripples through the wiring for six steps, and the move and the evaluation are read off its 2,333 motor and descending neurons.</p>
+      <p><b>What was trained</b> is only how loud each synapse is: one gain per connection, a resting level and a time constant per neuron, and the linear maps in and out. No connection was added or removed, and no sign was flipped. Everything nonlinear the network does, it does inside the connectome.</p>
+      <p><b>It taught itself.</b> AlphaZero-style: play games against yourself with a small tree search, learn to predict what the search preferred and who won, repeat. Stockfish only ever measured; it never taught. After 322,000 games the fly held its own against Stockfish at its lowest calibrated strength, and without any search at all it loses about 74 centipawns a move, roughly a 1200-rated human.</p>
+      <p><b>Is the fly's wiring special?</b> Probably not for chess. A control with the same neurons and the same number of synapses but random partners learns at least as fast. What seems to matter is the scale and sparsity of the substrate, not who evolution wired to whom. Which is, in its own way, the more interesting finding.</p>
+      <p><b>In your browser</b> the whole network is downloaded once and evaluated on your graphics card through WebGPU, or on the CPU where that is not available. "Rated" is the 32-simulation search its Elo was measured at; "Deepest" is far stronger and slower. Code, training logs and the trained weights are on <a href="https://github.com/turlockmike/alpha-fly">GitHub</a>.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>alpha-fly · MIT licence</span>
+    <a href="https://github.com/turlockmike/alpha-fly">Source and write-up</a>
+    <a href="https://www.janelia.org/project-team/flyem">MaleCNS connectome (Janelia / Google)</a>
+    <span>Pieces by Colin M.L. Burnett</span>
+  </footer>
+</div>
+
+<script src="vendor/chess.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const FILES = "abcdefgh";
+  const state = { game: new Chess(), human: "w", flip: false, sims: 32, sel: null, targets: [], busy: false, req: 0,
+                  ready: false, evalMs: 60, backend: null, last: null, gameId: 0, thought: null, promo: null };
+
+  // ---- engine worker ----
+  const worker = new Worker("worker.js");
+  worker.onmessage = e => {
+    const m = e.data;
+    if (m.type === "progress") {
+      const mb = x => (x / 1048576).toFixed(0);
+      $("loadbig").textContent = `${mb(m.done)} of ${mb(m.total)} MB`;
+      $("loadbar").style.width = (100 * m.done / m.total).toFixed(1) + "%";
+      if (m.done === m.total) { $("loadbig").textContent = "Waking it up"; $("statustext").textContent = "Waking up the fly"; }
+    } else if (m.type === "ready") {
+      state.ready = true; state.evalMs = m.evalMs; state.backend = m.backend;
+      $("loading").hidden = true;
+      $("pill").dataset.state = "ready";
+      $("pilltext").innerHTML = m.backend === "gpu" ? `<b>GPU</b> ${escapeHtml(shortGpu(m.gpuName))} · ${m.evalMs} ms per thought`
+                                                     : `<b>CPU</b> · ${m.evalMs} ms per thought`;
+      depthHint();
+      if (turnIsFly()) flyMove(); else setStatus("you", "Your move");
+    } else if (m.type === "thought") {
+      if (m.id !== state.req) return;
+      state.busy = false;
+      if (!m.move) { render(); return; }
+      state.thought = m;
+      state.game.move({ from: m.move.from, to: m.move.to, promotion: m.move.promotion });
+      state.last = [m.move.from, m.move.to];
+      showThought(m);
+      afterMove();
+    } else if (m.type === "error") {
+      state.busy = false;
+      $("pill").dataset.state = "error"; $("pilltext").textContent = "Engine error";
+      $("log").textContent = m.text;
+      setStatus("end", "The engine hit an error; see the note below the panel.");
+    } else if (m.type === "log") {
+      $("log").textContent += m.text + "\n";
+    }
+  };
+  worker.postMessage({ type: "load", base: "model/" });
+
+  function shortGpu(s) { return (s || "").replace(/\(.*?\)/g, "").replace(/NVIDIA GeForce|Apple|Intel\(R\)|AMD/gi, x => x).trim().slice(0, 40) || "WebGPU"; }
+  function escapeHtml(s) { return s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function depthHint() {
+    const evals = state.sims === 0 ? 1 : state.sims + 1;
+    const ms = evals * state.evalMs;
+    $("depthhint").textContent = !state.ready ? "" : state.sims === 0 ? "its first instinct, no lookahead" :
+      `${state.sims} simulations · about ${ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + " s"} a move`;
+  }
+
+  // ---- game flow ----
+  function turnIsFly() { return state.game.turn() !== state.human && !state.game.game_over(); }
+  function flyMove() {
+    if (!state.ready || state.game.game_over()) return;
+    state.busy = true; state.sel = null; state.targets = [];
+    setStatus("fly", state.sims ? `The fly is thinking (${state.sims} simulations)` : "The fly reacts");
+    render();
+    const moves = state.game.history({ verbose: true }).map(m => m.from + m.to + (m.promotion || ""));
+    worker.postMessage({ type: "think", id: ++state.req, moves, sims: state.sims, explore: $("improv").checked });
+  }
+  function afterMove() {
+    render();
+    if (state.game.game_over()) { endStatus(); return; }
+    if (turnIsFly()) flyMove(); else setStatus("you", state.game.in_check() ? "Your move. You're in check" : "Your move");
+  }
+  function endStatus() {
+    const g = state.game;
+    let text;
+    if (g.in_checkmate()) text = g.turn() === state.human ? "Checkmate. The fly wins" : "Checkmate. You beat a fly's brain";
+    else if (g.in_stalemate()) text = "Stalemate. Draw";
+    else if (g.in_threefold_repetition()) text = "Draw by repetition";
+    else if (g.insufficient_material()) text = "Draw: not enough material to mate";
+    else text = "Draw by the fifty-move rule";
+    setStatus("end", text);
+  }
+  function setStatus(kind, text) { $("status").dataset.k = kind; $("statustext").textContent = text; }
+  function newGame() {
+    state.game = new Chess(); state.sel = null; state.targets = []; state.last = null; state.thought = null; state.busy = false; state.req++;
+    state.flip = state.human === "b";
+    $("thoughts").innerHTML = '<p class="empty">Make a move and the fly will show the lines it considered.</p>';
+    setEval(0);
+    render();
+    if (!state.ready) setStatus("load", "Downloading the fly's brain");
+    else if (turnIsFly()) flyMove(); else setStatus("you", "Your move");
+  }
+
+  // ---- board ----
+  const board = $("board");
+  function sqName(i) { return FILES[i & 7] + ((i >> 3) + 1); }
+  function render() {
+    const g = state.game, pos = g.board();                  // pos[0] is rank 8
+    const inCheck = g.in_check(), turn = g.turn();
+    board.innerHTML = "";
+    const targets = new Map(state.targets.map(m => [m.to, m]));
+    for (let vr = 0; vr < 8; vr++) for (let vf = 0; vf < 8; vf++) {
+      const rank = state.flip ? vr : 7 - vr, file = state.flip ? 7 - vf : vf;
+      const p = pos[7 - rank][file], name = sqName(rank * 8 + file);
+      const d = document.createElement("div");
+      d.className = "sq" + ((rank + file) % 2 === 0 ? " d" : "");
+      d.dataset.sq = name;
+      if (state.last && (state.last[0] === name || state.last[1] === name)) d.classList.add("last");
+      if (state.sel === name) d.classList.add("sel");
+      if (inCheck && p && p.type === "k" && p.color === turn) d.classList.add("check");
+      const t = targets.get(name);
+      if (t) { d.classList.add("tgt"); if (t.captured) d.classList.add("cap"); }
+      if (p && p.color === state.human && turn === state.human && !state.busy && !g.game_over()) d.classList.add("can");
+      if (p) { const img = document.createElement("img"); img.src = `pieces/${p.color}${p.type}.svg`; img.alt = ""; img.draggable = false; d.appendChild(img); }
+      if (vf === 7) { const c = document.createElement("span"); c.className = "coord r"; c.textContent = rank + 1; d.appendChild(c); }
+      if (vr === 7) { const c = document.createElement("span"); c.className = "coord f"; c.textContent = FILES[file]; d.appendChild(c); }
+      d.addEventListener("click", () => clickSquare(name));
+      board.appendChild(d);
+    }
+    if (state.promo) board.appendChild(state.promo);
+    renderMoves();
+    $("topname").innerHTML = state.flip ? `<b>you</b> · ${state.human === "w" ? "White" : "Black"}` : `<b>the fly</b> · ${state.human === "w" ? "Black" : "White"}`;
+    $("botname").innerHTML = state.flip ? `<b>the fly</b> · ${state.human === "w" ? "Black" : "White"}` : `<b>you</b> · ${state.human === "w" ? "White" : "Black"}`;
+    $("takeback").disabled = state.game.history().length === 0 || state.busy;
+  }
+  function clickSquare(name) {
+    const g = state.game;
+    if (state.busy || g.game_over() || g.turn() !== state.human || state.promo) return;
+    const t = state.targets.find(m => m.to === name);
+    if (t) {
+      if (t.promotion) return askPromotion(t);
+      playHuman(t);
+      return;
+    }
+    const p = g.get(name);
+    if (p && p.color === state.human) {
+      state.sel = name; state.targets = g.moves({ square: name, verbose: true });
+    } else { state.sel = null; state.targets = []; }
+    render();
+  }
+  function askPromotion(t) {
+    const box = document.createElement("div"); box.className = "promo";
+    const inner = document.createElement("div");
+    for (const pc of ["q", "r", "b", "n"]) {
+      const b = document.createElement("button"); b.title = { q: "Queen", r: "Rook", b: "Bishop", n: "Knight" }[pc];
+      const img = document.createElement("img"); img.src = `pieces/${state.human}${pc}.svg`; img.alt = b.title; b.appendChild(img);
+      b.addEventListener("click", ev => { ev.stopPropagation(); state.promo = null; playHuman({ from: t.from, to: t.to, promotion: pc }); });
+      inner.appendChild(b);
+    }
+    box.appendChild(inner); state.promo = box; render();
+  }
+  function playHuman(t) {
+    state.game.move({ from: t.from, to: t.to, promotion: t.promotion });
+    state.last = [t.from, t.to]; state.sel = null; state.targets = [];
+    afterMove();
+  }
+  function renderMoves() {
+    const h = state.game.history();
+    const el = $("moves");
+    if (!h.length) { el.innerHTML = '<span class="empty">No moves yet.</span>'; return; }
+    el.innerHTML = h.map((san, i) => (i % 2 === 0 ? `<span class="num">${i / 2 + 1}.</span>` : "") +
+      `<span class="m${i === h.length - 1 ? " cur" : ""}">${san}</span>`).join(" ");
+    el.scrollTop = el.scrollHeight;
+  }
+
+  // ---- the fly's thoughts ----
+  function setEval(whiteValue) {
+    const v = Math.max(-1, Math.min(1, whiteValue));
+    $("evalfill").style.width = ((v + 1) / 2 * 100).toFixed(1) + "%";
+    const a = Math.abs(v);
+    $("evaltext").textContent = a < 0.08 ? "even" : `${v > 0 ? "White" : "Black"} ${a < 0.3 ? "slightly better" : a < 0.6 ? "better" : a < 0.9 ? "winning" : "about to win"}`;
+  }
+  function showThought(m) {
+    const flyWhite = state.human === "b";
+    setEval(flyWhite ? m.value : -m.value);
+    const maxV = Math.max(...m.considered.map(c => c.visits), 1);
+    const rows = m.considered.map(c => `<tr class="${c.san === m.move.san ? "best" : ""}"><td>${c.san}</td>` +
+      (m.sims ? `<td><span class="vbar" style="width:${(60 * c.visits / maxV).toFixed(0)}px"></span> <span class="mono">${c.visits}</span></td>` : "") +
+      `<td class="n mono">${(c.prior * 100).toFixed(0)}%</td><td class="n mono">${m.sims ? ((c.q + 1) / 2 * 100).toFixed(0) + "%" : ""}</td></tr>`).join("");
+    $("thoughts").innerHTML = `<table class="th"><thead><tr><th>Move</th>${m.sims ? "<th>Visits</th>" : ""}<th style="text-align:right">Instinct</th><th style="text-align:right">${m.sims ? "Win chance" : ""}</th></tr></thead><tbody>${rows}</tbody></table>` +
+      `<p class="hint" style="margin:10px 0 0">${m.sims ? `${m.sims} simulations in ${m.ms} ms.` : `First instinct, ${m.ms} ms.`} Instinct is the network's own preference before any lookahead.</p>`;
+  }
+
+  // ---- controls ----
+  document.querySelectorAll("[data-side]").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-side]").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    state.human = b.dataset.side; newGame();
+  }));
+  document.querySelectorAll("#depth button").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("#depth button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    state.sims = +b.dataset.sims; depthHint();
+  }));
+  $("newgame").addEventListener("click", newGame);
+  $("flip").addEventListener("click", () => { state.flip = !state.flip; render(); });
+  $("takeback").addEventListener("click", () => {
+    if (state.busy) return;
+    state.game.undo();
+    if (state.game.turn() !== state.human) state.game.undo();
+    state.req++; state.sel = null; state.targets = []; state.last = null;
+    const h = state.game.history({ verbose: true }); if (h.length) state.last = [h[h.length - 1].from, h[h.length - 1].to];
+    render();
+    if (turnIsFly()) flyMove(); else setStatus("you", "Your move");
+  });
+  $("copypgn").addEventListener("click", async () => {
+    const g = state.game;
+    g.header("Event", "alpha-fly", "Site", "https://turlockmike.github.io/alpha-fly/", "Date", new Date().toISOString().slice(0, 10).replace(/-/g, "."),
+             "White", state.human === "w" ? "You" : "alpha-fly", "Black", state.human === "b" ? "You" : "alpha-fly",
+             "Result", g.game_over() ? (g.in_checkmate() ? (g.turn() === "w" ? "0-1" : "1-0") : "1/2-1/2") : "*");
+    const pgn = g.pgn();
+    const btn = $("copypgn");
+    try { await navigator.clipboard.writeText(pgn); btn.textContent = "Copied"; }
+    catch (e) { const ta = document.createElement("textarea"); ta.value = pgn; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); btn.textContent = "Copied"; } catch (e2) { btn.textContent = "Select and copy"; } ta.remove(); }
+    setTimeout(() => btn.textContent = "Copy PGN", 1500);
+  });
+
+  // ---- ambient connectome ----
+  (() => {
+    const c = $("bg"), ctx = c.getContext("2d");
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let nodes = [], w = 0, h = 0, dpr = 1;
+    function resize() {
+      dpr = Math.min(devicePixelRatio || 1, 2); w = innerWidth; h = Math.min(innerHeight, 900);
+      c.width = w * dpr; c.height = h * dpr; c.style.height = h + "px"; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const n = Math.round(w * h / 9000);
+      nodes = Array.from({ length: n }, () => ({ x: Math.random() * w, y: Math.random() * h, vx: (Math.random() - .5) * .12, vy: (Math.random() - .5) * .12, r: 1 + Math.random() * 1.8, k: Math.random() < .3 }));
+    }
+    function draw() {
+      ctx.clearRect(0, 0, w, h);
+      const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+      const ink = dark ? "237,241,238" : "19,26,23", acc = dark ? "240,106,166" : "184,35,110", teal = dark ? "63,191,168" : "23,117,102";
+      for (let i = 0; i < nodes.length; i++) {
+        const a = nodes[i];
+        for (let j = i + 1; j < nodes.length; j++) {
+          const b = nodes[j], dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+          if (d2 < 110 * 110) { ctx.strokeStyle = `rgba(${ink},${(0.13 * (1 - d2 / 12100)).toFixed(3)})`; ctx.lineWidth = .7; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+        }
+      }
+      for (const n of nodes) { ctx.fillStyle = `rgba(${n.k ? acc : teal},${n.k ? .55 : .35})`; ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 6.283); ctx.fill(); }
+    }
+    function tick() {
+      for (const n of nodes) { n.x += n.vx; n.y += n.vy; if (n.x < 0 || n.x > w) n.vx *= -1; if (n.y < 0 || n.y > h) n.vy *= -1; }
+      draw(); requestAnimationFrame(tick);
+    }
+    resize(); draw();
+    addEventListener("resize", () => { resize(); draw(); });
+    if (!reduce) requestAnimationFrame(tick);
+  })();
+
+  newGame();
+})();
+</script>
+</body>
+</html>
