@@ -1,6 +1,6 @@
 // One slice of the fly's neurons: this worker owns rows i0 .. i0+count-1 and their synapses (see worker.js makePool).
 // A module worker, so `stepRows` is loaded before the first message is handled.
-import { stepRows } from "./fly.js";
+import { stepRows } from "./fly.js?v=3";
 
 let S = null, biasTotal = null, out = null;
 self.onmessage = (e) => {

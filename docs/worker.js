@@ -1,5 +1,5 @@
 // The engine lives in this worker so the page stays responsive while the fly thinks.
-importScripts("vendor/chess.js");
+importScripts("vendor/chess.js?v=3");
 
 let model = null, gpu = null, fly = null, backend = "cpu", evalMs = 0, pool = null;
 let brain = null;          // {idx, rest, scale}: the neurons drawn on the page, their resting activity, and a scale
@@ -36,7 +36,7 @@ async function loadBrain(base) {
 function makePool(m, k) {
   const slices = fly.rowSlices(m.crow, k);
   const workers = slices.map(([i0, count]) => {
-    const worker = new Worker("compute.js", { type: "module" });
+    const worker = new Worker("compute.js?v=3", { type: "module" });
     const a = m.crow[i0], b = m.crow[i0 + count];
     const crow = new Uint32Array(count + 1);
     for (let r = 0; r <= count; r++) crow[r] = m.crow[i0 + r] - a;
@@ -68,7 +68,7 @@ async function fetchBytes(url) {
 }
 
 async function load(base) {
-  fly = await import("./fly.js");
+  fly = await import("./fly.js?v=3");
   const t0 = performance.now();
   model = await fly.loadModel(base, fetchBytes, (done, total) => post({ type: "progress", done, total }));
   const loadMs = performance.now() - t0;
