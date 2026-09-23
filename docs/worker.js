@@ -2,6 +2,34 @@
 importScripts("vendor/chess.js");
 
 let model = null, gpu = null, fly = null, backend = "cpu", evalMs = 0, pool = null;
+let brain = null;          // {idx, rest, scale}: the neurons drawn on the page, their resting activity, and a scale
+let lastPulse = 0, simsDone = 0, thinkTotal = 0;
+
+/** Activity of the drawn neurons in the state just computed, as bytes: |h - resting| relative to a typical deviation. */
+function pulse() {
+  if (!brain) return;
+  const now = performance.now();
+  if (now - lastPulse < 40) return;                       // at most 25 frames a second
+  lastPulse = now;
+  const K = brain.idx.length, out = new Uint8Array(K);
+  if (backend === "gpu") {
+    const x = model.lastExtra; if (!x) return;
+    for (let k = 0; k < K; k++) { const v = Math.abs(x[k] - brain.rest[k]) * brain.scale; out[k] = v > 255 ? 255 : v; }
+  } else {
+    const h = model.lastH; if (!h) return;
+    for (let k = 0; k < K; k++) { const v = Math.abs(h[brain.idx[k]] - brain.rest[k]) * brain.scale; out[k] = v > 255 ? 255 : v; }
+  }
+  post({ type: "pulse", act: out, done: simsDone / (thinkTotal || 1) }, [out.buffer]);
+}
+
+async function loadBrain(base) {
+  const buf = await fetchBytes(base + "brain.bin");
+  const K = new Uint32Array(buf, 0, 1)[0];
+  const idx = new Uint32Array(buf, 4, K);
+  const x = new Int16Array(buf, 4 + 4 * K, K), y = new Int16Array(buf, 4 + 6 * K, K), z = new Int16Array(buf, 4 + 8 * K, K);
+  const cls = new Uint8Array(buf, 4 + 10 * K, K);
+  return { idx, x, y, z, cls };
+}
 
 /** A pool of compute workers, each owning a slice of the neurons and only its slice of the synapses.  Every
  *  update step sends them the whole state (667 KB each) and gets their slice of the next state back. */
@@ -45,7 +73,9 @@ async function load(base) {
   model = await fly.loadModel(base, fetchBytes, (done, total) => post({ type: "progress", done, total }));
   const loadMs = performance.now() - t0;
   let gpuName = null;
-  try { gpu = await fly.initGpu(model); } catch (e) { gpu = null; post({ type: "log", text: "WebGPU unavailable: " + e.message }); }
+  const drawn = await loadBrain(base);
+  post({ type: "brain", x: drawn.x, y: drawn.y, z: drawn.z, cls: drawn.cls });
+  try { gpu = await fly.initGpu(model, drawn.idx); } catch (e) { gpu = null; post({ type: "log", text: "WebGPU unavailable: " + e.message }); }
   if (gpu) {
     // check the GPU path against the CPU path on the first test position before trusting it
     const t = model.tests[0], feats = fly.encodeFen(t.fen, false);
@@ -54,6 +84,17 @@ async function load(base) {
     if (d < 0.05 && Math.abs(a.value - b.value) < 0.01) { backend = "gpu"; gpuName = gpu.name; }
     else { post({ type: "log", text: `WebGPU result differed from CPU by ${d.toFixed(3)}; using the CPU` }); gpu = null; }
   }
+  // the resting activity of the drawn neurons (no position at all), and a scale for the display
+  const sample = async (feats) => {
+    await evaluate(feats, model.tests[0].idx);
+    const K = drawn.idx.length, v = new Float32Array(K);
+    if (backend === "gpu") v.set(model.lastExtra); else for (let k = 0; k < K; k++) v[k] = model.lastH[drawn.idx[k]];
+    return v;
+  };
+  const rest = await sample([]);
+  const dev = await sample(fly.encodeFen(model.tests[1].fen, false));
+  const d = Array.from(dev, (v, k) => Math.abs(v - rest[k])).sort((a, b) => a - b);
+  brain = { idx: drawn.idx, rest, scale: 255 / Math.max(d[Math.floor(d.length * 0.97)], 1e-6) };
   const t = model.tests[1], feats = fly.encodeFen(t.fen, false);
   const time = async (n) => { const t1 = performance.now(); for (let i = 0; i < n; i++) await evaluate(feats, t.idx); return (performance.now() - t1) / n; };
   let cores = 1;
@@ -75,15 +116,20 @@ async function load(base) {
 }
 
 async function evaluate(feats, idx) {
-  if (backend === "gpu") return fly.evaluateGpu(model, gpu, feats, idx);
-  if (backend === "pool") return fly.evaluatePool(model, pool, feats, idx);
-  return fly.evaluateCpu(model, feats, idx);
+  let r;
+  if (backend === "gpu") r = await fly.evaluateGpu(model, gpu, feats, idx);
+  else if (backend === "pool") r = await fly.evaluatePool(model, pool, feats, idx);
+  else r = fly.evaluateCpu(model, feats, idx);
+  simsDone++;
+  pulse();
+  return r;
 }
 
 async function think({ id, moves, sims, explore }) {
   const game = new Chess();
   for (const u of moves) game.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] });
   const t0 = performance.now();
+  simsDone = 0; lastPulse = 0; thinkTotal = sims + 1;
   let r;
   if (sims <= 0) r = await fly.rawMove(game, evaluate, explore);
   else r = await fly.search(game, evaluate, { sims, maxConsidered: 16, cVisit: 50, cScale: 1, explore });

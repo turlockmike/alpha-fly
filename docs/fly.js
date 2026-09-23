@@ -151,6 +151,7 @@ function recurCpu(m) {
     stepRows(values, col, crow, alpha, hMax, biasTotal, h, h2, 0, n);
     const tmp = h; h = h2; h2 = tmp;
   }
+  m.lastH = h;
   const out = new Float32Array(m.nOut);
   for (let j = 0; j < m.nOut; j++) out[j] = h[m.outIdx[j]];
   return out;
@@ -179,6 +180,7 @@ export async function recurPool(m, pool) {
     await pool.step(h, h2);
     const tmp = h; h = h2; h2 = tmp;
   }
+  m.lastH = h;
   const out = new Float32Array(m.nOut);
   for (let j = 0; j < m.nOut; j++) out[j] = h[m.outIdx[j]];
   return out;
@@ -250,8 +252,10 @@ fn gather(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `;
 
-export async function initGpu(m) {
+export async function initGpu(m, extraIdx) {
   if (typeof navigator === "undefined" || !navigator.gpu) return null;
+  const gatherIdx = extraIdx ? Uint32Array.from([...m.outIdx, ...extraIdx]) : m.outIdx;
+  const nGather = gatherIdx.length;
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) return null;
   const need = Math.max(m.values.byteLength, m.col.byteLength);
@@ -269,9 +273,9 @@ export async function initGpu(m) {
     params: mk(new Uint8Array(params), U | C), vals: mk(m.values, S), col: mk(m.col, S), crow: mk(m.crow, S),
     bias: device.createBuffer({ size: m.n * 4, usage: S | C }), alpha: mk(m.alpha, S),
     hA: device.createBuffer({ size: m.n * 4, usage: S | C }), hB: device.createBuffer({ size: m.n * 4, usage: S | C }),
-    gparams: mk(new Uint32Array([m.nOut]), U), outIdx: mk(m.outIdx, S),
-    out: device.createBuffer({ size: m.nOut * 4, usage: S | GPUBufferUsage.COPY_SRC }),
-    stage: device.createBuffer({ size: m.nOut * 4, usage: GPUBufferUsage.MAP_READ | C }),
+    gparams: mk(new Uint32Array([nGather]), U), outIdx: mk(gatherIdx, S),
+    out: device.createBuffer({ size: nGather * 4, usage: S | GPUBufferUsage.COPY_SRC }),
+    stage: device.createBuffer({ size: nGather * 4, usage: GPUBufferUsage.MAP_READ | C }),
   };
   const stepPipe = device.createComputePipeline({ layout: "auto", compute: { module: device.createShaderModule({ code: WGSL }), entryPoint: "step" } });
   const gatherPipe = device.createComputePipeline({ layout: "auto", compute: { module: device.createShaderModule({ code: WGSL_GATHER }), entryPoint: "gather" } });
@@ -282,7 +286,7 @@ export async function initGpu(m) {
     bufs.gparams, bufs.outIdx, src, bufs.out].map((b, i) => ({ binding: i, resource: { buffer: b } })) });
   const gA = gbg(bufs.hA), gB = gbg(bufs.hB);
   const zeros = new Float32Array(m.n);
-  const groups = Math.ceil(m.n / 128), ggroups = Math.ceil(m.nOut / 128);
+  const groups = Math.ceil(m.n / 128), ggroups = Math.ceil(nGather / 128);
   let info = "WebGPU";
   try { const ai = adapter.info || (adapter.requestAdapterInfo && await adapter.requestAdapterInfo()); if (ai) info = ai.description || ai.device || ai.vendor || info; } catch (e) { /* not exposed */ }
   return {
@@ -299,12 +303,13 @@ export async function initGpu(m) {
       }
       const pass = enc.beginComputePass();
       pass.setPipeline(gatherPipe); pass.setBindGroup(0, cur === "A" ? gA : gB); pass.dispatchWorkgroups(ggroups); pass.end();
-      enc.copyBufferToBuffer(bufs.out, 0, bufs.stage, 0, m.nOut * 4);
+      enc.copyBufferToBuffer(bufs.out, 0, bufs.stage, 0, nGather * 4);
       device.queue.submit([enc.finish()]);
       await bufs.stage.mapAsync(GPUMapMode.READ);
-      const out = new Float32Array(bufs.stage.getMappedRange().slice(0));
+      const all = new Float32Array(bufs.stage.getMappedRange().slice(0));
       bufs.stage.unmap();
-      return out;
+      m.lastExtra = all.subarray(m.nOut);                    // the extra neurons, for the activity display
+      return all.subarray(0, m.nOut);
     },
   };
 }

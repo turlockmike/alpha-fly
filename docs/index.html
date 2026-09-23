@@ -146,6 +146,17 @@ table.th tr.best td:first-child { font-weight: 700; color: var(--accent); }
 .movelist .m { color: var(--ink); }
 .movelist .m.cur { background: var(--accent-soft); border-radius: 4px; padding: 0 4px; }
 .log { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+.brain canvas { display: block; width: 100%; aspect-ratio: 1.45; border-radius: 10px; background: var(--sunk); }
+.brain .cap { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+.brain .cap b { color: var(--ink); font-weight: 600; }
+.brain .prog { flex: none; width: 90px; height: 4px; border-radius: 999px; background: var(--sunk); overflow: hidden; opacity: 0; transition: opacity .3s; }
+.brain .prog i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s linear; }
+.brain .prog.on { opacity: 1; }
+.iconbtn { border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); width: 32px; height: 32px; border-radius: 999px; cursor: pointer; display: inline-grid; place-items: center; padding: 0; }
+.iconbtn:hover { background: var(--sunk); }
+.iconbtn[aria-pressed="true"] { color: var(--muted); }
+.iconbtn svg { width: 16px; height: 16px; }
+.toprt { display: flex; align-items: center; gap: 10px; }
 
 /* how it works */
 .how { padding-block: 32px 40px; border-top: 1px solid var(--line); }
@@ -169,7 +180,12 @@ footer a { color: var(--ink-2); }
   <header class="top">
     <a class="wordmark display" href="./"><i></i>alpha-fly</a>
     <nav class="nav"><a href="#how">How it works</a><a href="https://github.com/turlockmike/alpha-fly">GitHub</a></nav>
-    <span class="pill" id="pill" data-state="loading"><i></i><span id="pilltext">Loading the brain</span></span>
+    <span class="toprt">
+      <span class="pill" id="pill" data-state="loading"><i></i><span id="pilltext">Loading the brain</span></span>
+      <button class="iconbtn" id="mute" aria-pressed="false" title="Sound on" aria-label="Toggle sound">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path id="mute-on" d="M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/><path id="mute-off" d="M11 5 6 9H2v6h4l5 4V5zM22 9l-6 6M16 9l6 6" hidden/></svg>
+      </button>
+    </span>
   </header>
 
   <section class="hero">
@@ -186,6 +202,11 @@ footer a { color: var(--ink-2); }
     </div>
 
     <aside class="panel">
+      <div class="card brain">
+        <h2>The fly's brain</h2>
+        <canvas id="brain" aria-label="The fly's neurons in 3D; the ones lighting up are active while it thinks"></canvas>
+        <div class="cap"><span id="braincap"><b>30,000</b> of its 166,700 neurons, where they sit in the fly. They light up as it thinks.</span><span class="prog" id="brainprog"><i></i></span></div>
+      </div>
       <div class="card loading" id="loading">
         <h2>Downloading a brain</h2>
         <p class="big display" id="loadbig">0 of 101 MB</p>
@@ -206,11 +227,9 @@ footer a { color: var(--ink-2); }
             <button data-sims="16" aria-pressed="false" title="16 simulations a move">Fast</button>
             <button data-sims="128" aria-pressed="true" title="128 simulations a move: stronger than the setting its rating was measured at">Deep</button>
           </span>
-          <span class="hint" id="depthhint"></span>
         </div>
         <div class="btns">
           <button class="btn primary" id="newgame">New game</button>
-          <button class="btn" id="takeback">Take back</button>
           <button class="btn" id="flip">Flip board</button>
           <button class="btn" id="copypgn">Copy PGN</button>
         </div>
@@ -278,17 +297,24 @@ footer a { color: var(--ink-2); }
       state.ready = true; state.evalMs = m.evalMs; state.backend = m.backend;
       $("loading").hidden = true;
       $("pill").dataset.state = "ready";
-      $("pilltext").innerHTML = m.backend === "gpu" ? `<b>GPU</b> ${escapeHtml(shortGpu(m.gpuName))} · ${m.evalMs} ms per thought`
-                                                     : `<b>CPU</b> ${m.cores > 1 ? m.cores + " cores" : ""} · ${m.evalMs} ms per thought`;
+      $("pilltext").innerHTML = m.backend === "gpu" ? `Running on your <b>GPU</b>` : `Running on your <b>CPU</b>${m.cores > 1 ? ", " + m.cores + " cores" : ""}`;
       depthHint();
       if (turnIsFly()) flyMove(); else setStatus("you", "Your move");
+    } else if (m.type === "brain") {
+      brainView.init(m.x, m.y, m.z, m.cls);
+    } else if (m.type === "pulse") {
+      brainView.pulse(m.act);
+      if (state.busy) $("brainprog").firstElementChild.style.width = (100 * Math.min(1, m.done)).toFixed(0) + "%";
     } else if (m.type === "thought") {
       if (m.id !== state.req) return;
       state.busy = false;
       if (!m.move) { render(); return; }
       state.thought = m;
-      state.game.move({ from: m.move.from, to: m.move.to, promotion: m.move.promotion });
+      const mv = state.game.move({ from: m.move.from, to: m.move.to, promotion: m.move.promotion });
       state.last = [m.move.from, m.move.to];
+      snd.play(mv, state.game, false);
+      brainView.settle();
+      $("brainprog").classList.remove("on");
       showThought(m);
       afterMove();
     } else if (m.type === "error") {
@@ -304,19 +330,16 @@ footer a { color: var(--ink-2); }
 
   function shortGpu(s) { return (s || "").replace(/\(.*?\)/g, "").replace(/NVIDIA GeForce|Apple|Intel\(R\)|AMD/gi, x => x).trim().slice(0, 40) || "WebGPU"; }
   function escapeHtml(s) { return s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-  function depthHint() {
-    const evals = state.sims === 0 ? 1 : state.sims + 1;
-    const ms = evals * state.evalMs;
-    $("depthhint").textContent = !state.ready ? "" :
-      `${state.sims} simulations · about ${ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + " s"} a move`;
-  }
+  function depthHint() { /* the numbers behind Fast and Deep live in the repository, not on the page */ }
 
   // ---- game flow ----
   function turnIsFly() { return state.game.turn() !== state.human && !state.game.game_over(); }
   function flyMove() {
     if (!state.ready || state.game.game_over()) return;
     state.busy = true; state.sel = null; state.targets = [];
-    setStatus("fly", `The fly is thinking (${state.sims} simulations)`);
+    setStatus("fly", "The fly is thinking");
+    $("brainprog").classList.add("on"); $("brainprog").firstElementChild.style.width = "0";
+    brainView.wake();
     render();
     const moves = state.game.history({ verbose: true }).map(m => m.from + m.to + (m.promotion || ""));
     worker.postMessage({ type: "think", id: ++state.req, moves, sims: state.sims, explore: true });
@@ -328,6 +351,7 @@ footer a { color: var(--ink-2); }
   }
   function endStatus() {
     const g = state.game;
+    snd.end(g.in_checkmate() && g.turn() !== state.human);
     let text;
     if (g.in_checkmate()) text = g.turn() === state.human ? "Checkmate. The fly wins" : "Checkmate. You beat a fly's brain";
     else if (g.in_stalemate()) text = "Stalemate. Draw";
@@ -377,7 +401,6 @@ footer a { color: var(--ink-2); }
     renderMoves();
     $("topname").innerHTML = state.flip ? `<b>you</b> · ${state.human === "w" ? "White" : "Black"}` : `<b>the fly</b> · ${state.human === "w" ? "Black" : "White"}`;
     $("botname").innerHTML = state.flip ? `<b>the fly</b> · ${state.human === "w" ? "Black" : "White"}` : `<b>you</b> · ${state.human === "w" ? "White" : "Black"}`;
-    $("takeback").disabled = state.game.history().length === 0 || state.busy;
   }
   function clickSquare(name) {
     const g = state.game;
@@ -406,8 +429,9 @@ footer a { color: var(--ink-2); }
     box.appendChild(inner); state.promo = box; render();
   }
   function playHuman(t) {
-    state.game.move({ from: t.from, to: t.to, promotion: t.promotion });
+    const mv = state.game.move({ from: t.from, to: t.to, promotion: t.promotion });
     state.last = [t.from, t.to]; state.sel = null; state.targets = [];
+    snd.play(mv, state.game, true);
     afterMove();
   }
   function renderMoves() {
@@ -429,12 +453,12 @@ footer a { color: var(--ink-2); }
   function showThought(m) {
     const flyWhite = state.human === "b";
     setEval(flyWhite ? m.value : -m.value);
-    const maxV = Math.max(...m.considered.map(c => c.visits), 1);
-    const rows = m.considered.map(c => `<tr class="${c.san === m.move.san ? "best" : ""}"><td>${c.san}</td>` +
-      (m.sims ? `<td><span class="vbar" style="width:${(60 * c.visits / maxV).toFixed(0)}px"></span> <span class="mono">${c.visits}</span></td>` : "") +
-      `<td class="n mono">${(c.prior * 100).toFixed(0)}%</td><td class="n mono">${m.sims ? ((c.q + 1) / 2 * 100).toFixed(0) + "%" : ""}</td></tr>`).join("");
-    $("thoughts").innerHTML = `<table class="th"><thead><tr><th>Move</th>${m.sims ? "<th>Visits</th>" : ""}<th style="text-align:right">Instinct</th><th style="text-align:right">${m.sims ? "Win chance" : ""}</th></tr></thead><tbody>${rows}</tbody></table>` +
-      `<p class="hint" style="margin:10px 0 0">${m.sims ? `${m.sims} simulations in ${m.ms} ms.` : `First instinct, ${m.ms} ms.`} Instinct is the network's own preference before any lookahead.</p>`;
+    const rows = m.considered.slice(0, 6).map(c => { const wc = (c.q + 1) / 2;
+      return `<tr class="${c.san === m.move.san ? "best" : ""}"><td>${c.san}</td>` +
+      `<td class="n mono">${(c.prior * 100).toFixed(0)}%</td>` +
+      `<td><span class="vbar" style="width:${(64 * wc).toFixed(0)}px"></span> <span class="mono">${(wc * 100).toFixed(0)}%</span></td></tr>`; }).join("");
+    $("thoughts").innerHTML = `<table class="th"><thead><tr><th>Move</th><th style="text-align:right">Instinct</th><th>Win chance</th></tr></thead><tbody>${rows}</tbody></table>` +
+      `<p class="hint" style="margin:10px 0 0">Instinct is the network's own preference before it looks ahead; win chance is what it found by looking.</p>`;
   }
 
   // ---- controls ----
@@ -448,15 +472,6 @@ footer a { color: var(--ink-2); }
   }));
   $("newgame").addEventListener("click", newGame);
   $("flip").addEventListener("click", () => { state.flip = !state.flip; render(); });
-  $("takeback").addEventListener("click", () => {
-    if (state.busy) return;
-    state.game.undo();
-    if (state.game.turn() !== state.human) state.game.undo();
-    state.req++; state.sel = null; state.targets = []; state.last = null;
-    const h = state.game.history({ verbose: true }); if (h.length) state.last = [h[h.length - 1].from, h[h.length - 1].to];
-    render();
-    if (turnIsFly()) flyMove(); else setStatus("you", "Your move");
-  });
   $("copypgn").addEventListener("click", async () => {
     const g = state.game;
     g.header("Event", "alpha-fly", "Site", "https://turlockmike.github.io/alpha-fly/", "Date", new Date().toISOString().slice(0, 10).replace(/-/g, "."),
@@ -468,6 +483,133 @@ footer a { color: var(--ink-2); }
     catch (e) { const ta = document.createElement("textarea"); ta.value = pgn; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); btn.textContent = "Copied"; } catch (e2) { btn.textContent = "Select and copy"; } ta.remove(); }
     setTimeout(() => btn.textContent = "Copy PGN", 1500);
   });
+
+  // ---- sound: short synthesised clicks, no files ----
+  const snd = (() => {
+    let ctx = null, muted = false;
+    try { muted = localStorage.getItem("alpha-fly-muted") === "1"; } catch (e) { /* no storage */ }
+    const btn = $("mute");
+    const paint = () => { btn.setAttribute("aria-pressed", muted ? "true" : "false"); btn.title = muted ? "Sound off" : "Sound on";
+      $("mute-on").hidden = muted; $("mute-off").hidden = !muted; };
+    paint();
+    btn.addEventListener("click", () => { muted = !muted; paint(); try { localStorage.setItem("alpha-fly-muted", muted ? "1" : "0"); } catch (e) { /* ignore */ } if (!muted) tone(660, .05, .12, "sine"); });
+    const ensure = () => { if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ctx = null; } } if (ctx && ctx.state === "suspended") ctx.resume(); return ctx; };
+    addEventListener("pointerdown", ensure, { once: true, capture: true });
+    function tone(freq, dur, gain, type, when = 0) {
+      const c = ensure(); if (!c || muted) return;
+      const t = c.currentTime + when, o = c.createOscillator(), g = c.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t); o.frequency.exponentialRampToValueAtTime(Math.max(40, freq * .6), t + dur);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + .004); g.gain.exponentialRampToValueAtTime(.0005, t + dur);
+      o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + .02);
+    }
+    function click(gain, when = 0) {                         // a piece landing: a burst of filtered noise
+      const c = ensure(); if (!c || muted) return;
+      const t = c.currentTime + when, n = c.sampleRate * .05, buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 3;
+      const s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+      s.buffer = buf; f.type = "lowpass"; f.frequency.value = 1800; g.gain.value = gain;
+      s.connect(f).connect(g).connect(c.destination); s.start(t);
+    }
+    return {
+      play(mv, g, human) {
+        if (!mv) return;
+        const capture = /[ce]/.test(mv.flags);
+        click(capture ? .9 : .5); tone(capture ? 150 : (human ? 220 : 190), capture ? .14 : .09, capture ? .35 : .22, "triangle");
+        if (g.in_check() && !g.game_over()) { tone(880, .08, .12, "sine", .1); tone(1175, .1, .12, "sine", .18); }
+      },
+      end(flyWon) { const base = flyWon ? 330 : 440; [0, .12, .24].forEach((w, i) => tone(base * [1, 1.25, 1.5][i], .3, .18, "sine", w)); },
+    };
+  })();
+
+  // ---- the fly's brain in 3D: every drawn neuron at its real soma position, lit by the activity of the position
+  //      being evaluated, turning slowly about the body axis (WebGL points) ----
+  const brainView = (() => {
+    const canvas = $("brain");
+    const gl = canvas.getContext("webgl", { antialias: true, alpha: true, premultipliedAlpha: false });
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let n = 0, glow = null, glowBuf = null, prog = null, loc = {}, awake = false, settling = false, raf = 0;
+    let angle = 0.6, lastT = 0, dirty = false;
+    if (!gl) { canvas.hidden = true; return { init() {}, pulse() {}, wake() {}, settle() {}, relayout() {} }; }
+    const VS = `
+      attribute vec3 aPos; attribute float aCls; attribute float aGlow;
+      uniform mat3 uRot; uniform float uAspect; uniform float uDpr;
+      uniform vec3 uInk; uniform vec3 uAcc; uniform vec3 uTeal;
+      varying vec4 vCol;
+      void main() {
+        vec3 p = uRot * aPos;
+        float depth = 1.0 / (2.6 + p.z);                 // a little perspective
+        gl_Position = vec4(p.x * 1.9 * depth, -p.y * 1.9 * depth * uAspect, p.z * 0.2, 1.0);
+        float big = step(2.5, aCls);                     // inputs and outputs are drawn a touch larger
+        gl_PointSize = (1.6 + 0.6 * big + 5.0 * aGlow) * uDpr * (2.6 * depth);
+        vec3 base = aCls == 3.0 ? uTeal : (aCls == 4.0 ? uAcc : uInk);
+        float a = aCls == 3.0 ? 0.55 : (aCls == 4.0 ? 0.5 : (aCls == 1.0 ? 0.2 : 0.28));
+        vCol = vec4(mix(base, uAcc, aGlow), mix(a, 1.0, aGlow));
+      }`;
+    const FS = `
+      precision mediump float; varying vec4 vCol;
+      void main() { vec2 d = gl_PointCoord - 0.5; float r = dot(d, d) * 4.0; if (r > 1.0) discard;
+        gl_FragColor = vec4(vCol.rgb, vCol.a * (1.0 - r * r)); }`;
+    function shader(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; }
+    function rgb(s) { const m = s.match(/\d+/g); return [m[0] / 255, m[1] / 255, m[2] / 255]; }
+    function colours() {
+      const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+      return { ink: rgb(dark ? "237,241,238" : "19,26,23"), acc: rgb(dark ? "240,106,166" : "184,35,110"), teal: rgb(dark ? "63,191,168" : "23,117,102") };
+    }
+    function layout() {
+      const box = canvas.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.round(box.width * dpr)); canvas.height = Math.max(1, Math.round(box.height * dpr));
+      gl.viewport(0, 0, canvas.width, canvas.height); dirty = true;
+      if (n && !raf) raf = requestAnimationFrame(frame);
+    }
+    function rot(a) {                                   // tilt a little, then turn about the body (x) axis
+      const c = Math.cos(a), s = Math.sin(a), t = 0.35, ct = Math.cos(t), st = Math.sin(t);
+      // R = Ry(tilt) * Rx(a), column-major for WebGL
+      return new Float32Array([ct, 0, -st,   st * s, c, ct * s,   st * c, -s, ct * c]);
+    }
+    function frame(t) {
+      raf = 0;
+      if (!n) return;
+      const dt = lastT ? Math.min(0.05, (t - lastT) / 1000) : 0; lastT = t;
+      if (!reduce) angle += dt * (awake ? 0.45 : 0.18);
+      let any = false;
+      const decay = Math.pow(settling ? 0.06 : 0.25, dt);
+      for (let k = 0; k < n; k++) { const g = glow[k]; if (g > 0.02) { glow[k] = g * decay; any = true; } else if (g) glow[k] = 0; }
+      gl.bindBuffer(gl.ARRAY_BUFFER, glowBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, glow);
+      const { ink, acc, teal } = colours();
+      gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(prog);
+      gl.uniformMatrix3fv(loc.rot, false, rot(angle));
+      gl.uniform1f(loc.aspect, canvas.width / canvas.height); gl.uniform1f(loc.dpr, Math.min(devicePixelRatio || 1, 2));
+      gl.uniform3fv(loc.ink, ink); gl.uniform3fv(loc.acc, acc); gl.uniform3fv(loc.teal, teal);
+      gl.drawArrays(gl.POINTS, 0, n);
+      dirty = false;
+      if (!reduce || any || awake) raf = requestAnimationFrame(frame);
+    }
+    function attrib(name, data, size) {
+      const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, size === 1 && name === "aGlow" ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
+      const a = gl.getAttribLocation(prog, name); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, size, gl.FLOAT, false, 0, 0);
+      return b;
+    }
+    return {
+      init(x, y, z, cls) {
+        n = x.length;
+        prog = gl.createProgram(); gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog); gl.useProgram(prog);
+        const pos = new Float32Array(n * 3);
+        for (let k = 0; k < n; k++) { pos[3 * k] = x[k] / 32767; pos[3 * k + 1] = z[k] / 32767; pos[3 * k + 2] = y[k] / 32767; }
+        attrib("aPos", pos, 3); attrib("aCls", Float32Array.from(cls), 1);
+        glow = new Float32Array(n); glowBuf = attrib("aGlow", glow, 1);
+        loc = { rot: gl.getUniformLocation(prog, "uRot"), aspect: gl.getUniformLocation(prog, "uAspect"), dpr: gl.getUniformLocation(prog, "uDpr"),
+                ink: gl.getUniformLocation(prog, "uInk"), acc: gl.getUniformLocation(prog, "uAcc"), teal: gl.getUniformLocation(prog, "uTeal") };
+        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        layout();
+      },
+      pulse(act) { if (!glow) return; for (let k = 0; k < act.length; k++) { const v = act[k] / 255; if (v > glow[k]) glow[k] = v; } if (!raf) raf = requestAnimationFrame(frame); },
+      wake() { awake = true; settling = false; if (!raf && n) raf = requestAnimationFrame(frame); },
+      settle() { awake = false; settling = true; },
+      relayout: layout,
+    };
+  })();
+  addEventListener("resize", () => brainView.relayout());
 
   // ---- ambient connectome ----
   (() => {
