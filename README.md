@@ -125,6 +125,9 @@ results/                 training logs of the main run and the control
 
 ## Credits
 
-The connectome is MaleCNS v1.0 by HHMI Janelia's FlyEM team, Google Research and the University of Cambridge.
+The connectome is [MaleCNS v1.0](https://male-cns.janelia.org/) by HHMI Janelia's FlyEM team, Google Research, the
+University of Cambridge and the MRC LMB, released under CC BY 4.0; the weights in `docs/model/` are derived from it.
+Please cite: *Sexual dimorphism in the complete connectome of the Drosophila male central nervous system*, Cell (2026),
+preprint doi:10.1101/2025.10.09.680999.
 Chess pieces by Colin M.L. Burnett (BSD). Move generation in the browser by [chess.js](https://github.com/jhlywa/chess.js).
 Built with [Claude Code](https://claude.com/claude-code). MIT licence.

@@ -61,8 +61,7 @@ Every dataclass field in `model.py`, `mcts.py`, `selfplay.py` and `train.py` is 
   `--snapshot_every` iterations). `chessfly.model.load_net(path)` returns a ready network from either.
 * **Playing a checkpoint:** `python -m chessfly.uci <checkpoint>` is a UCI engine, so any chess GUI
   (Arena, Cute Chess, Banksia) or lichess-bot can load it. Engine command:
-  `uv run --project C:\workspace\chess-fly python -m chessfly.uci C:\workspace\chess-fly
-unsly\last.pt`. It searches a
+  `uv run --project <path to this repository> python -m chessfly.uci runs/fly/last.pt`. It searches a
   fixed number of simulations per move (option `Simulations`, default 200; about 1 s per 100 while
   training shares the GPU) and ignores the clock. Two snapshots in a GUI tournament is the simplest
   way to see how much a day of training bought.

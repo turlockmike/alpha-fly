@@ -1,7 +1,7 @@
 """The fly as a UCI engine, so any chess GUI (Arena, Cute Chess, Banksia, lichess-bot) can play a checkpoint.
 
     uv run python -m chessfly.uci runs/fly/last.pt                 # or runs/fly/snapshots/iter_000100.pt
-    engine command for a GUI:   uv run --project C:\\workspace\\chess-fly python -m chessfly.uci C:\\workspace\\chess-fly\\runs\\fly\\last.pt
+    engine command for a GUI:   uv run --project <path to this repository> python -m chessfly.uci runs/fly/last.pt
 
 Options: Simulations (default 200; "go nodes N" overrides it per move).  Clocks are ignored: the engine
 always searches the same number of simulations, which keeps it quick and its strength reproducible.
