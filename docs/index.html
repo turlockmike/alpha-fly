@@ -550,8 +550,7 @@ footer a { color: var(--ink-2); }
       void main() { vec2 d = gl_PointCoord - 0.5; float r = dot(d, d) * 4.0; if (r > 1.0) discard;
         gl_FragColor = vec4(vCol.rgb, vCol.a * (1.0 - r * r)); }`;
     function shader(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) $("log").textContent += "brain shader: " + gl.getShaderInfoLog(s) + "
-"; return s; }
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) $("log").textContent += "brain shader: " + gl.getShaderInfoLog(s) + "\n"; return s; }
     function rgb(s) { const m = s.match(/\d+/g); return [m[0] / 255, m[1] / 255, m[2] / 255]; }
     function colours() {
       const dark = matchMedia("(prefers-color-scheme: dark)").matches;
@@ -596,8 +595,7 @@ footer a { color: var(--ink-2); }
       init(x, y, z, cls) {
         n = x.length;
         prog = gl.createProgram(); gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog); gl.useProgram(prog);
-        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) $("log").textContent += "brain program: " + gl.getProgramInfoLog(prog) + "
-";
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) $("log").textContent += "brain program: " + gl.getProgramInfoLog(prog) + "\n";
         const pos = new Float32Array(n * 3);
         for (let k = 0; k < n; k++) { pos[3 * k] = x[k] / 32767; pos[3 * k + 1] = z[k] / 32767; pos[3 * k + 2] = y[k] / 32767; }
         attrib("aPos", pos, 3); attrib("aCls", Float32Array.from(cls), 1);
